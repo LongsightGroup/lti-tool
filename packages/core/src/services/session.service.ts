@@ -12,14 +12,12 @@ import {
 } from '../constants.js';
 import type { LTISession } from '../interfaces/ltiSession.js';
 import type { LTI13JwtPayload } from '../schemas/index.js';
-
-const ROLE_MAPPINGS: Record<string, string> = {
-  Instructor: 'instructor',
-  Learner: 'student',
-  Administrator: 'admin',
-  ContentDeveloper: 'content-developer',
-  Member: 'member',
-};
+import {
+  hasLtiAdministratorRole,
+  hasLtiInstructorRole,
+  hasLtiLearnerRole,
+  simplifyLtiRoles,
+} from '../utils/ltiRoles.js';
 
 /**
  * Creates an LTI session object from a validated LTI 1.3 JWT payload.
@@ -43,9 +41,9 @@ export function createSession(
   const nrpsService = lti13JwtPayload[LTI_CLAIM_NRPS_NAMES_ROLE_SERVICE];
   const deepLinkingSettings = lti13JwtPayload[LTI_CLAIM_DEEP_LINKING_SETTINGS];
 
-  const isInstructor = hasRole(roles, 'Instructor');
-  const isStudent = hasRole(roles, 'Learner');
-  const isAdmin = hasRole(roles, 'Administrator');
+  const isInstructor = hasLtiInstructorRole(roles);
+  const isStudent = hasLtiLearnerRole(roles);
+  const isAdmin = hasLtiAdministratorRole(roles);
 
   const services: Record<string, unknown> = {};
   if (agsEndpoint) {
@@ -78,8 +76,7 @@ export function createSession(
     };
   }
 
-  // Extract simplified roles
-  const simplifiedRoles = simplifyRoles(roles);
+  const simplifiedRoles = simplifyLtiRoles(roles);
 
   return {
     jwtPayload: lti13JwtPayload,
@@ -123,18 +120,6 @@ export function createSession(
   };
 }
 
-function simplifyRoles(roles: string[]): string[] {
-  const simplified = new Set<string>();
-  for (const role of roles) {
-    for (const [key, value] of Object.entries(ROLE_MAPPINGS)) {
-      if (role.includes(key)) {
-        simplified.add(value);
-      }
-    }
-  }
-  return [...simplified];
-}
-
 function getSessionClientId(
   audience: LTI13JwtPayload['aud'],
   verifiedClientId?: string,
@@ -147,8 +132,4 @@ function getSessionClientId(
   }
 
   throw new Error('Cannot determine session client_id from multiple audiences');
-}
-
-function hasRole(roles: string[], pattern: string): boolean {
-  return roles.some((role) => role.includes(pattern));
 }

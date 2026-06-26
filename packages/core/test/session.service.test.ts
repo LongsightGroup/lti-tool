@@ -14,6 +14,7 @@ import {
   LTI_CLAIM_TARGET_LINK_URI,
   LTI_CLAIM_VERSION,
   LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST,
+  LTI_ROLE_CONTEXT_TEACHING_ASSISTANT,
   LTI_VERSION_1P3P0,
 } from '../src/constants.js';
 import type { LTI13JwtPayload } from '../src/schemas/index.js';
@@ -104,6 +105,19 @@ describe('createSession', () => {
   it('correctly identifies instructor role', () => {
     const payload = createMinimalPayload({
       [LTI_CLAIM_ROLES]: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'],
+    });
+
+    const session = createSession(payload);
+
+    expect(session.isInstructor).toBe(true);
+    expect(session.isStudent).toBe(false);
+    expect(session.isAdmin).toBe(false);
+    expect(session.user.roles).toContain('instructor');
+  });
+
+  it('treats teaching assistant as an instructor role', () => {
+    const payload = createMinimalPayload({
+      [LTI_CLAIM_ROLES]: [LTI_ROLE_CONTEXT_TEACHING_ASSISTANT],
     });
 
     const session = createSession(payload);

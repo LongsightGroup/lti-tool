@@ -54,6 +54,21 @@ export const LTI_AGS_SCOPE_SCORE =
 export const LTI_NRPS_SCOPE_CONTEXT_MEMBERSHIP_READONLY =
   'https://purl.imsglobal.org/spec/lti-nrps/scope/contextmembership.readonly' as const;
 
+export const LTI_ROLE_CONTEXT_ADMINISTRATOR =
+  'http://purl.imsglobal.org/vocab/lis/v2/membership#Administrator' as const;
+export const LTI_ROLE_CONTEXT_CONTENT_DEVELOPER =
+  'http://purl.imsglobal.org/vocab/lis/v2/membership#ContentDeveloper' as const;
+export const LTI_ROLE_CONTEXT_INSTRUCTOR =
+  'http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor' as const;
+export const LTI_ROLE_CONTEXT_LEARNER =
+  'http://purl.imsglobal.org/vocab/lis/v2/membership#Learner' as const;
+export const LTI_ROLE_CONTEXT_MEMBER =
+  'http://purl.imsglobal.org/vocab/lis/v2/membership#Member' as const;
+export const LTI_ROLE_CONTEXT_TEACHING_ASSISTANT =
+  'http://purl.imsglobal.org/vocab/lis/v2/membership#TeachingAssistant' as const;
+export const LTI_ROLE_INSTITUTION_ADMINISTRATOR =
+  'http://purl.imsglobal.org/vocab/lis/v2/institution#Administrator' as const;
+
 /** All standard LTI 1.3 Assignment and Grade Services OAuth scopes. */
 export const LTI_AGS_SCOPES = [
   LTI_AGS_SCOPE_LINEITEM,
@@ -64,3 +79,14 @@ export const LTI_AGS_SCOPES = [
 
 /** All standard LTI 1.3 Names and Role Provisioning Services OAuth scopes. */
 export const LTI_NRPS_SCOPES = [LTI_NRPS_SCOPE_CONTEXT_MEMBERSHIP_READONLY] as const;
+
+/** Common standard LTI role URIs used by launch and NRPS membership payloads. */
+export const LTI_ROLES = [
+  LTI_ROLE_CONTEXT_ADMINISTRATOR,
+  LTI_ROLE_CONTEXT_CONTENT_DEVELOPER,
+  LTI_ROLE_CONTEXT_INSTRUCTOR,
+  LTI_ROLE_CONTEXT_LEARNER,
+  LTI_ROLE_CONTEXT_MEMBER,
+  LTI_ROLE_CONTEXT_TEACHING_ASSISTANT,
+  LTI_ROLE_INSTITUTION_ADMINISTRATOR,
+] as const;
