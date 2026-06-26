@@ -17,6 +17,7 @@ export {
   type LTIMessage,
 } from './lti13/dynamicRegistration/ltiMessages.schema.js';
 export { type OpenIDConfiguration } from './lti13/dynamicRegistration/openIDConfiguration.schema.js';
+export { DeepLinkingSettingsSchema } from './lti13/claims/serviceClaims.schema.js';
 export {
   RegistrationRequestSchema,
   type RegistrationRequest,

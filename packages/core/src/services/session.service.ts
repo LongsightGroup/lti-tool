@@ -12,6 +12,7 @@ import {
 } from '../constants.js';
 import type { LTISession } from '../interfaces/ltiSession.js';
 import type { LTI13JwtPayload } from '../schemas/index.js';
+import { parseLtiDeepLinkingSettings } from '../utils/deepLinkingSettings.js';
 import {
   hasLtiAdministratorRole,
   hasLtiInstructorRole,
@@ -40,6 +41,7 @@ export function createSession(
   const agsEndpoint = lti13JwtPayload[LTI_CLAIM_AGS_ENDPOINT];
   const nrpsService = lti13JwtPayload[LTI_CLAIM_NRPS_NAMES_ROLE_SERVICE];
   const deepLinkingSettings = lti13JwtPayload[LTI_CLAIM_DEEP_LINKING_SETTINGS];
+  const parsedDeepLinkingSettings = parseLtiDeepLinkingSettings(deepLinkingSettings);
 
   const isInstructor = hasLtiInstructorRole(roles);
   const isStudent = hasLtiLearnerRole(roles);
@@ -64,16 +66,8 @@ export function createSession(
       versions: nrpsService.service_versions || [],
     };
   }
-  if (deepLinkingSettings) {
-    services.deepLinking = {
-      returnUrl: deepLinkingSettings.deep_link_return_url,
-      acceptTypes: deepLinkingSettings.accept_types || [],
-      acceptPresentationDocumentTargets:
-        deepLinkingSettings.accept_presentation_document_targets || [],
-      acceptMediaTypes: deepLinkingSettings.accept_media_types,
-      autoCreate: deepLinkingSettings.auto_create,
-      data: deepLinkingSettings.data,
-    };
+  if (parsedDeepLinkingSettings) {
+    services.deepLinking = parsedDeepLinkingSettings;
   }
 
   const simplifiedRoles = simplifyLtiRoles(roles);
@@ -115,7 +109,7 @@ export function createSession(
     isInstructor,
     isStudent,
     isAssignmentAndGradesAvailable: !!agsEndpoint,
-    isDeepLinkingAvailable: !!deepLinkingSettings,
+    isDeepLinkingAvailable: !!parsedDeepLinkingSettings,
     isNameAndRolesAvailable: !!nrpsService,
   };
 }

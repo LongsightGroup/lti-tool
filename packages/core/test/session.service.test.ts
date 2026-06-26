@@ -260,6 +260,7 @@ describe('createSession', () => {
       acceptTypes: ['link', 'file'],
       acceptPresentationDocumentTargets: ['iframe', 'window'],
       acceptMediaTypes: 'image/*,text/html',
+      acceptMultiple: false,
       autoCreate: true,
       data: 'custom_data_123',
     });

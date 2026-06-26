@@ -3,6 +3,11 @@ export * from './schemas/index.js';
 export * from './constants.js';
 export { isServerlessEnvironment } from './utils/environment.js';
 export {
+  isLtiDeepLinkingContentTypeAccepted,
+  parseLtiDeepLinkingSettings,
+  type LtiDeepLinkingSettings,
+} from './utils/deepLinkingSettings.js';
+export {
   classifyLtiRole,
   classifyLtiRoles,
   getLtiRoleName,
