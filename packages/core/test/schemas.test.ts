@@ -23,11 +23,13 @@ import {
 import {
   DynamicRegistrationFormSchema,
   HandleLoginParamsSchema,
+  LTI13LoginInitiationSchema,
   LTI13JwtPayloadSchema,
   LTI13LaunchSchema,
   LTI13LoginSchema,
   SessionIdSchema,
   VerifyLaunchParamsSchema,
+  parseLtiLoginInitiation,
 } from '../src/schemas/index.js';
 import { LineItemSchema } from '../src/schemas/lti13/ags/lineItem.schema.js';
 import { ResultSchema } from '../src/schemas/lti13/ags/result.schema.js';
@@ -146,6 +148,71 @@ describe('Schema Validation Tests', () => {
       };
 
       expect(() => LTI13LoginSchema.parse(incompleteLogin)).toThrow();
+    });
+  });
+
+  describe('LTI13LoginInitiationSchema', () => {
+    it('accepts standard login initiation parameters with optional registration hints', () => {
+      const parsed = LTI13LoginInitiationSchema.parse({
+        iss: 'https://platform.example.com',
+        login_hint: 'user123',
+        target_link_uri: 'https://tool.example.com/content',
+        client_id: 'client123',
+        lti_deployment_id: 'deployment1',
+        lti_message_hint: 'hint123',
+        lti_storage_target: '_parent',
+      });
+
+      expect(parsed).toEqual({
+        iss: 'https://platform.example.com',
+        login_hint: 'user123',
+        target_link_uri: 'https://tool.example.com/content',
+        client_id: 'client123',
+        lti_deployment_id: 'deployment1',
+        lti_message_hint: 'hint123',
+        lti_storage_target: '_parent',
+      });
+    });
+
+    it('allows platforms to omit optional client, deployment, message, and storage hints', () => {
+      const parsed = parseLtiLoginInitiation({
+        iss: 'https://platform.example.com',
+        login_hint: 'user123',
+        target_link_uri: 'https://tool.example.com/content',
+      });
+
+      expect(parsed).toEqual({
+        iss: 'https://platform.example.com',
+        login_hint: 'user123',
+        target_link_uri: 'https://tool.example.com/content',
+      });
+    });
+
+    it('normalizes empty optional fields to undefined', () => {
+      const parsed = parseLtiLoginInitiation({
+        iss: 'https://platform.example.com',
+        login_hint: 'user123',
+        target_link_uri: 'https://tool.example.com/content',
+        client_id: '',
+        lti_deployment_id: '',
+        lti_message_hint: '',
+        lti_storage_target: '',
+      });
+
+      expect(parsed).toEqual({
+        iss: 'https://platform.example.com',
+        login_hint: 'user123',
+        target_link_uri: 'https://tool.example.com/content',
+      });
+    });
+
+    it('still rejects missing required launch initiation fields', () => {
+      expect(() =>
+        parseLtiLoginInitiation({
+          iss: 'https://platform.example.com',
+          target_link_uri: 'https://tool.example.com/content',
+        }),
+      ).toThrow();
     });
   });
 

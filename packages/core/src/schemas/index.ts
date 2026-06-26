@@ -33,4 +33,10 @@ export {
   LTI13LaunchSchema,
   VerifyLaunchParamsSchema,
 } from './lti13/lti13Launch.schema.js';
-export { HandleLoginParamsSchema, LTI13LoginSchema } from './lti13/lti13Login.schema.js';
+export {
+  HandleLoginParamsSchema,
+  LTI13LoginInitiationSchema,
+  type LTI13LoginInitiation,
+  LTI13LoginSchema,
+  parseLtiLoginInitiation,
+} from './lti13/lti13Login.schema.js';
