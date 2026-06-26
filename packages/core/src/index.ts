@@ -38,4 +38,12 @@ export {
   renderLtiPostMessageStorageRedirectPage,
   type LtiPostMessageStorageRedirect,
 } from './utils/ltiPostMessageStorage.js';
+export {
+  LtiLaunchMessageResolutionError,
+  resolveLtiLaunchMessage,
+  type LtiLaunchMessageResolutionErrorCode,
+  type ResolvedLtiDeepLinkingLaunchMessage,
+  type ResolvedLtiLaunchMessage,
+  type ResolvedLtiResourceLinkLaunchMessage,
+} from './utils/ltiLaunchMessage.js';
 export { LTITool } from './ltiTool.js';
