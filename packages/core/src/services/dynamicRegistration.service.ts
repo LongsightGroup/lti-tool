@@ -7,8 +7,11 @@ import {
   LTI_CLAIM_TOOL_CONFIGURATION,
   LTI_NRPS_SCOPE_CONTEXT_MEMBERSHIP_READONLY,
 } from '../constants.js';
+import type { LTIClient } from '../interfaces/ltiClient.js';
 import type { DynamicRegistrationConfig } from '../interfaces/ltiConfig.js';
+import type { LTIDeployment } from '../interfaces/ltiDeployment.js';
 import type { LTIDynamicRegistrationSession } from '../interfaces/ltiDynamicRegistrationSession.js';
+import type { LTILaunchConfig } from '../interfaces/ltiLaunchConfig.js';
 import type { LTIStorage } from '../interfaces/ltiStorage.js';
 import type { DynamicRegistrationForm } from '../schemas/lti13/dynamicRegistration/ltiDynamicRegistration.schema.js';
 import {
@@ -29,6 +32,85 @@ import {
   buildDynamicRegistrationMessages,
   transformDynamicRegistrationPayload,
 } from './dynamicRegistrationProfiles.js';
+
+export interface LtiDynamicRegistrationCompletionResult {
+  html: string;
+  client: LTIClient;
+  deployment: LTIDeployment;
+  launchConfig: LTILaunchConfig;
+  createdClient: boolean;
+  createdDeployment: boolean;
+}
+
+const dynamicRegistrationDeploymentInput = (
+  registrationResponse: RegistrationResponse,
+): Omit<LTIDeployment, 'id'> => {
+  const ltiToolConfig = registrationResponse[LTI_CLAIM_TOOL_CONFIGURATION];
+  return ltiToolConfig.deployment_id
+    ? {
+        deploymentId: ltiToolConfig.deployment_id,
+        name: 'Default Deployment via dynamic registration provided deployment id',
+      }
+    : {
+        // platform doesn't use a deployment id (canvas for example) - create default
+        deploymentId: 'default',
+        name: 'Default Deployment (Canvas-style)',
+      };
+};
+
+const dynamicRegistrationLaunchConfig = (input: {
+  session: LTIDynamicRegistrationSession;
+  registrationResponse: RegistrationResponse;
+  deployment: LTIDeployment;
+}): LTILaunchConfig => ({
+  iss: input.session.openIdConfiguration.issuer,
+  clientId: input.registrationResponse.client_id,
+  deploymentId: input.deployment.deploymentId,
+  authUrl: input.session.openIdConfiguration.authorization_endpoint,
+  tokenUrl: input.session.openIdConfiguration.token_endpoint,
+  jwksUrl: input.session.openIdConfiguration.jwks_uri,
+});
+
+const storeDynamicRegistrationResult = async (input: {
+  storage: LTIStorage;
+  session: LTIDynamicRegistrationSession;
+  registrationResponse: RegistrationResponse;
+}): Promise<Omit<LtiDynamicRegistrationCompletionResult, 'html'>> => {
+  const clientInput = {
+    name: input.registrationResponse.client_name,
+    clientId: input.registrationResponse.client_id,
+    iss: input.session.openIdConfiguration.issuer,
+    jwksUrl: input.session.openIdConfiguration.jwks_uri,
+    authUrl: input.session.openIdConfiguration.authorization_endpoint,
+    tokenUrl: input.session.openIdConfiguration.token_endpoint,
+  };
+  const clientId = await input.storage.addClient(clientInput);
+  const deploymentInput = dynamicRegistrationDeploymentInput(input.registrationResponse);
+  const deployment = {
+    id: await input.storage.addDeployment(clientId, deploymentInput),
+    ...deploymentInput,
+  };
+  const client: LTIClient = {
+    id: clientId,
+    ...clientInput,
+    deployments: [deployment],
+  };
+  const launchConfig = dynamicRegistrationLaunchConfig({
+    session: input.session,
+    registrationResponse: input.registrationResponse,
+    deployment,
+  });
+
+  await input.storage.saveLaunchConfig(launchConfig);
+
+  return {
+    client,
+    deployment,
+    launchConfig,
+    createdClient: true,
+    createdDeployment: true,
+  };
+};
 
 /**
  * Service for handling LTI 1.3 dynamic registration workflows.
@@ -172,6 +254,19 @@ export class DynamicRegistrationService {
   async completeDynamicRegistration(
     dynamicRegistrationForm: DynamicRegistrationForm,
   ): Promise<string> {
+    return (await this.completeDynamicRegistrationDetailed(dynamicRegistrationForm)).html;
+  }
+
+  /**
+   * Completes LTI 1.3 dynamic registration and returns stored registration details.
+   *
+   * @param dynamicRegistrationForm - Validated form data containing selected services and session token
+   * @returns HTML success page plus stored client, deployment, and launch config
+   * @throws {Error} When session is invalid, registration fails, or storage operations fail
+   */
+  async completeDynamicRegistrationDetailed(
+    dynamicRegistrationForm: DynamicRegistrationForm,
+  ): Promise<LtiDynamicRegistrationCompletionResult> {
     // 1. Verify session token
     const session = await this.verifyRegistrationSession(
       dynamicRegistrationForm.sessionToken,
@@ -195,32 +290,18 @@ export class DynamicRegistrationService {
     );
 
     // 3. save to storage
-    const clientId = await this.storage.addClient({
-      name: registrationResponse.client_name,
-      clientId: registrationResponse.client_id,
-      iss: session.openIdConfiguration.issuer,
-      jwksUrl: session.openIdConfiguration.jwks_uri,
-      authUrl: session.openIdConfiguration.authorization_endpoint,
-      tokenUrl: session.openIdConfiguration.token_endpoint,
+    const storedRegistration = await storeDynamicRegistrationResult({
+      storage: this.storage,
+      session,
+      registrationResponse,
     });
-
-    const ltiToolConfig = registrationResponse[LTI_CLAIM_TOOL_CONFIGURATION];
-    if (ltiToolConfig.deployment_id) {
-      await this.storage.addDeployment(clientId, {
-        deploymentId: ltiToolConfig.deployment_id,
-        name: 'Default Deployment via dynamic registration provided deployment id',
-      });
-    } else {
-      // platform doesn't use a deployment id (canvas for example) - create default
-      await this.storage.addDeployment(clientId, {
-        deploymentId: 'default',
-        name: 'Default Deployment (Canvas-style)',
-      });
-    }
 
     // 4. return success
     const successHtml = this.getRegistrationSuccessHtml(registrationResponse);
-    return successHtml;
+    return {
+      html: successHtml,
+      ...storedRegistration,
+    };
   }
 
   /**

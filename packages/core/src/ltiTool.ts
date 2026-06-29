@@ -37,7 +37,10 @@ import {
   type AGSListLineItemsOptions,
 } from './services/ags.service.js';
 import { DeepLinkingService } from './services/deepLinking.service.js';
-import { DynamicRegistrationService } from './services/dynamicRegistration.service.js';
+import {
+  DynamicRegistrationService,
+  type LtiDynamicRegistrationCompletionResult,
+} from './services/dynamicRegistration.service.js';
 import { NRPSService } from './services/nrps.service.js';
 import { createSession } from './services/session.service.js';
 import { TokenService } from './services/token.service.js';
@@ -851,6 +854,29 @@ export class LTITool {
 
     try {
       return await this.dynamicRegistrationService.completeDynamicRegistration(
+        dynamicRegistrationForm,
+      );
+    } catch (error) {
+      throw new Error(`[Dynamic Registration] Completion failed: ${formatError(error)}`);
+    }
+  }
+
+  /**
+   * Completes dynamic registration and returns the stored registration records.
+   *
+   * @param dynamicRegistrationForm - Validated form data containing selected services and session token
+   * @returns HTML response plus stored client, deployment, launch config, and created flags
+   * @throws {Error} When dynamic registration service is not configured or registration process fails
+   */
+  async completeDynamicRegistrationDetailed(
+    dynamicRegistrationForm: DynamicRegistrationForm,
+  ): Promise<LtiDynamicRegistrationCompletionResult> {
+    if (!this.dynamicRegistrationService) {
+      throw new Error('Dynamic registration service is not configured');
+    }
+
+    try {
+      return await this.dynamicRegistrationService.completeDynamicRegistrationDetailed(
         dynamicRegistrationForm,
       );
     } catch (error) {

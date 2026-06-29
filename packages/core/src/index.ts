@@ -58,6 +58,7 @@ export {
   serializeLtiDynamicRegistrationSession,
   serializeLtiSession,
 } from './utils/ltiSessionCodecs.js';
+export type { LtiDynamicRegistrationCompletionResult } from './services/dynamicRegistration.service.js';
 export {
   LTITool,
   type LtiLaunchRegistrationInput,

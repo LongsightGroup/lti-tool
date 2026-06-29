@@ -186,7 +186,7 @@ describe('DynamicRegistrationService', () => {
       sessionToken,
       services: [],
     };
-    await service.completeDynamicRegistration(form);
+    const result = await service.completeDynamicRegistrationDetailed(form);
 
     expect(storage.deleteRegistrationSession).toHaveBeenCalledWith(sessionToken);
     expect(storage.addClient).toHaveBeenCalledWith(
@@ -198,6 +198,33 @@ describe('DynamicRegistrationService', () => {
     expect(storage.addDeployment).toHaveBeenCalledWith('client-record-id', {
       deploymentId: '1',
       name: 'Default Deployment via dynamic registration provided deployment id',
+    });
+    expect(storage.saveLaunchConfig).toHaveBeenCalledWith({
+      iss: 'https://sakai.example',
+      clientId: 'sakai-client-id',
+      deploymentId: '1',
+      authUrl: 'https://sakai.example/imsoidc/lti13/oidc_auth',
+      tokenUrl: 'https://sakai.example/imsblis/lti13/token/1',
+      jwksUrl: 'https://sakai.example/imsblis/lti13/keyset',
+    });
+    expect(result).toMatchObject({
+      html: expect.stringContaining('Registration Successful'),
+      client: {
+        id: 'client-record-id',
+        clientId: 'sakai-client-id',
+        iss: 'https://sakai.example',
+      },
+      deployment: {
+        id: 'deployment-record-id',
+        deploymentId: '1',
+      },
+      launchConfig: {
+        iss: 'https://sakai.example',
+        clientId: 'sakai-client-id',
+        deploymentId: '1',
+      },
+      createdClient: true,
+      createdDeployment: true,
     });
 
     const fetchCall = (global.fetch as any).mock.calls[0] as [string, RequestInit];
