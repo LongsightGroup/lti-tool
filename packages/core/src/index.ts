@@ -8,6 +8,11 @@ export {
   type LtiDeepLinkingSettings,
 } from './utils/deepLinkingSettings.js';
 export {
+  createLtiResourceLinkContentItem,
+  LtiContentItemConstructionError,
+  type CreateLtiResourceLinkContentItemInput,
+} from './utils/deepLinkingContentItems.js';
+export {
   classifyLtiRole,
   classifyLtiRoles,
   getLtiRoleName,
