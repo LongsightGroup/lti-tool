@@ -2,12 +2,15 @@ import { generateKeyPair } from 'jose';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  LTI_AGS_SCOPE_LINEITEM,
+  LTI_AGS_SCOPE_LINEITEM_READONLY,
   LTI_AGS_SCOPE_SCORE,
   LtiServiceError,
   LTITool,
   type LTIStorage,
   type LTISession,
 } from '../src/index.js';
+import type { CreateLineItem } from '../src/schemas/lti13/ags/lineItem.schema.js';
 import type { ScoreSubmission } from '../src/schemas/lti13/ags/scoreSubmission.schema.js';
 
 const createMockStorage = (): LTIStorage =>
@@ -47,11 +50,38 @@ const session = {
   },
 } as LTISession;
 
+const lineItemsSession = {
+  ...session,
+  services: {
+    ...session.services,
+    ags: {
+      lineitem: 'https://platform.example.com/ags/lineitems/1',
+      lineitems: 'https://platform.example.com/ags/lineitems',
+      scopes: [
+        LTI_AGS_SCOPE_LINEITEM,
+        LTI_AGS_SCOPE_LINEITEM_READONLY,
+        LTI_AGS_SCOPE_SCORE,
+      ],
+    },
+  },
+} as LTISession;
+
 const score: ScoreSubmission = {
   scoreGiven: 9,
   scoreMaximum: 10,
   activityProgress: 'Completed',
   gradingProgress: 'FullyGraded',
+};
+
+const lineItem = {
+  id: 'https://platform.example.com/ags/lineitems/1',
+  label: 'Quiz 1',
+  scoreMaximum: 10,
+};
+
+const createLineItem: CreateLineItem = {
+  label: 'Quiz 1',
+  scoreMaximum: 10,
 };
 
 describe('LTI detailed service results', () => {
@@ -144,6 +174,143 @@ describe('LTI detailed service results', () => {
       endpointType: 'token',
       status: 401,
       responseBodySummary: '{"error":"invalid_client"}',
+    });
+  });
+
+  it('returns structured success for AGS line item listing', async () => {
+    const response = Response.json([lineItem]);
+    const listLineItems = vi.fn().mockResolvedValue(response);
+    (
+      ltiTool as unknown as {
+        agsService: { listLineItems: typeof listLineItems };
+      }
+    ).agsService = { listLineItems };
+
+    const result = await ltiTool.listLineItemsDetailed(lineItemsSession, {
+      resourceId: 'quiz-1',
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected detailed service success');
+    expect(result.data).toEqual([lineItem]);
+    expect(result.response).toBe(response);
+    expect(listLineItems).toHaveBeenCalledWith(lineItemsSession, {
+      resourceId: 'quiz-1',
+    });
+  });
+
+  it('returns structured success for AGS line item retrieval', async () => {
+    const response = Response.json(lineItem);
+    const getLineItem = vi.fn().mockResolvedValue(response);
+    (
+      ltiTool as unknown as {
+        agsService: { getLineItem: typeof getLineItem };
+      }
+    ).agsService = { getLineItem };
+
+    const result = await ltiTool.getLineItemDetailed(lineItemsSession, {
+      lineItemUrl: 'https://platform.example.com/ags/lineitems/1',
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected detailed service success');
+    expect(result.data).toEqual(lineItem);
+    expect(result.response).toBe(response);
+    expect(getLineItem).toHaveBeenCalledWith(lineItemsSession, {
+      lineItemUrl: 'https://platform.example.com/ags/lineitems/1',
+    });
+  });
+
+  it('returns structured success for AGS line item creation', async () => {
+    const response = Response.json(lineItem);
+    const createLineItemMock = vi.fn().mockResolvedValue(response);
+    (
+      ltiTool as unknown as {
+        agsService: { createLineItem: typeof createLineItemMock };
+      }
+    ).agsService = { createLineItem: createLineItemMock };
+
+    const result = await ltiTool.createLineItemDetailed(lineItemsSession, createLineItem);
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected detailed service success');
+    expect(result.data).toEqual(lineItem);
+    expect(result.response).toBe(response);
+    expect(createLineItemMock).toHaveBeenCalledWith(lineItemsSession, createLineItem);
+  });
+
+  it('returns a missing scope error before AGS line item listing', async () => {
+    const result = await ltiTool.listLineItemsDetailed({
+      ...lineItemsSession,
+      services: {
+        ags: {
+          lineitems: 'https://platform.example.com/ags/lineitems',
+          scopes: [],
+        },
+      },
+    } as LTISession);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected detailed service failure');
+    expect(result.error).toMatchObject({
+      name: 'LtiServiceError',
+      code: 'missing_required_scope',
+      serviceKind: 'ags',
+      operation: 'listLineItems',
+    });
+  });
+
+  it('classifies invalid AGS line item platform responses', async () => {
+    (
+      ltiTool as unknown as {
+        agsService: { getLineItem: ReturnType<typeof vi.fn> };
+      }
+    ).agsService = {
+      getLineItem: vi.fn().mockResolvedValue(Response.json({ label: 'Quiz 1' })),
+    };
+
+    const result = await ltiTool.getLineItemDetailed(lineItemsSession);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected detailed service failure');
+    expect(result.error).toMatchObject({
+      code: 'platform_response_invalid',
+      serviceKind: 'ags',
+      operation: 'getLineItem',
+    });
+  });
+
+  it('classifies AGS line item service failures', async () => {
+    (
+      ltiTool as unknown as {
+        agsService: { createLineItem: ReturnType<typeof vi.fn> };
+      }
+    ).agsService = {
+      createLineItem: vi.fn().mockRejectedValue(
+        new LtiServiceError({
+          code: 'platform_request_failed',
+          serviceKind: 'ags',
+          operation: 'createLineItem',
+          message: 'AGS create line item failed: 502 Bad Gateway',
+          endpointType: 'ags',
+          status: 502,
+          statusText: 'Bad Gateway',
+          responseBodySummary: 'upstream unavailable',
+        }),
+      ),
+    };
+
+    const result = await ltiTool.createLineItemDetailed(lineItemsSession, createLineItem);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected detailed service failure');
+    expect(result.error).toMatchObject({
+      code: 'platform_request_failed',
+      serviceKind: 'ags',
+      operation: 'createLineItem',
+      endpointType: 'ags',
+      status: 502,
+      responseBodySummary: 'upstream unavailable',
     });
   });
 

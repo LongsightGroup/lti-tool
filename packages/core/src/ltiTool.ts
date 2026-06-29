@@ -1,7 +1,11 @@
 import { exportJWK, SignJWT } from 'jose';
 import type { Logger } from 'pino';
 
-import { LTI_AGS_SCOPE_SCORE } from './constants.js';
+import {
+  LTI_AGS_SCOPE_LINEITEM,
+  LTI_AGS_SCOPE_LINEITEM_READONLY,
+  LTI_AGS_SCOPE_SCORE,
+} from './constants.js';
 import {
   LtiServiceError,
   type LtiServiceErrorCode,
@@ -266,6 +270,9 @@ const platformResponseInvalid = <T>(
     cause: error,
   }),
 });
+
+const hasAgsScope = (session: LTISession, scope: string): boolean =>
+  session.services?.ags?.scopes.includes(scope) === true;
 
 /**
  * Main LTI 1.3 Tool implementation providing secure authentication, launch verification,
@@ -694,9 +701,57 @@ export class LTITool {
   }
 
   /**
+   * Retrieves AGS line items and returns a structured result instead of throwing.
+   *
+   * @param session - Active LTI session containing AGS service endpoints
+   * @param options - Optional AGS line item list filters
+   * @returns Structured success with validated line items or stable service error result
+   */
+  async listLineItemsDetailed(
+    session: LTISession,
+    options: AGSListLineItemsOptions = {},
+  ): Promise<LtiServiceResult<LineItems>> {
+    if (!session.services?.ags?.lineitems) {
+      return ltiServicePreconditionFailure({
+        code: 'service_not_available',
+        serviceKind: 'ags',
+        operation: 'listLineItems',
+        message: 'AGS line items service is not available for this session',
+      });
+    }
+
+    if (!hasAgsScope(session, LTI_AGS_SCOPE_LINEITEM_READONLY)) {
+      return ltiServicePreconditionFailure({
+        code: 'missing_required_scope',
+        serviceKind: 'ags',
+        operation: 'listLineItems',
+        message: `Missing required AGS scope '${LTI_AGS_SCOPE_LINEITEM_READONLY}'`,
+      });
+    }
+
+    try {
+      const response = await this.agsService.listLineItems(session, options);
+      const data: unknown = await response.json();
+
+      try {
+        return {
+          success: true,
+          data: LineItemsSchema.parse(data),
+          response,
+        };
+      } catch (error) {
+        return platformResponseInvalid('ags', 'listLineItems', error);
+      }
+    } catch (error) {
+      return ltiServiceFailure(error, 'ags', 'listLineItems');
+    }
+  }
+
+  /**
    * Retrieves a specific line item (gradebook column) from the platform using Assignment and Grade Services (AGS).
    *
    * @param session - Active LTI session containing AGS service endpoints
+   * @param options - Optional line item target override
    * @returns Line item data from the platform
    * @throws {Error} When AGS is not available or request fails
    */
@@ -716,6 +771,55 @@ export class LTITool {
       throw new Error(
         `[AGS] Line item retrieval failed for session '${session.id}': ${formatError(error)}`,
       );
+    }
+  }
+
+  /**
+   * Retrieves an AGS line item and returns a structured result instead of throwing.
+   *
+   * @param session - Active LTI session containing AGS service endpoints
+   * @param options - Optional line item target override
+   * @returns Structured success with a validated line item or stable service error result
+   */
+  async getLineItemDetailed(
+    session: LTISession,
+    options: AGSLineItemTargetOptions = {},
+  ): Promise<LtiServiceResult<LineItem>> {
+    const lineItemUrl = options.lineItemUrl ?? session.services?.ags?.lineitem;
+
+    if (!lineItemUrl) {
+      return ltiServicePreconditionFailure({
+        code: 'service_not_available',
+        serviceKind: 'ags',
+        operation: 'getLineItem',
+        message: 'AGS line item service is not available for this session',
+      });
+    }
+
+    if (!hasAgsScope(session, LTI_AGS_SCOPE_LINEITEM_READONLY)) {
+      return ltiServicePreconditionFailure({
+        code: 'missing_required_scope',
+        serviceKind: 'ags',
+        operation: 'getLineItem',
+        message: `Missing required AGS scope '${LTI_AGS_SCOPE_LINEITEM_READONLY}'`,
+      });
+    }
+
+    try {
+      const response = await this.agsService.getLineItem(session, options);
+      const data: unknown = await response.json();
+
+      try {
+        return {
+          success: true,
+          data: LineItemSchema.parse(data),
+          response,
+        };
+      } catch (error) {
+        return platformResponseInvalid('ags', 'getLineItem', error);
+      }
+    } catch (error) {
+      return ltiServiceFailure(error, 'ags', 'getLineItem');
     }
   }
 
@@ -757,6 +861,53 @@ export class LTITool {
       throw new Error(
         `[AGS] Line item creation failed for '${createLineItem.label}': ${formatError(error)}`,
       );
+    }
+  }
+
+  /**
+   * Creates an AGS line item and returns a structured result instead of throwing.
+   *
+   * @param session - Active LTI session containing AGS service endpoints
+   * @param createLineItem - Line item data including label, scoreMaximum, and optional metadata
+   * @returns Structured success with the validated created line item or stable service error result
+   */
+  async createLineItemDetailed(
+    session: LTISession,
+    createLineItem: CreateLineItem,
+  ): Promise<LtiServiceResult<LineItem>> {
+    if (!session.services?.ags?.lineitems) {
+      return ltiServicePreconditionFailure({
+        code: 'service_not_available',
+        serviceKind: 'ags',
+        operation: 'createLineItem',
+        message: 'AGS line items service is not available for this session',
+      });
+    }
+
+    if (!hasAgsScope(session, LTI_AGS_SCOPE_LINEITEM)) {
+      return ltiServicePreconditionFailure({
+        code: 'missing_required_scope',
+        serviceKind: 'ags',
+        operation: 'createLineItem',
+        message: `Missing required AGS scope '${LTI_AGS_SCOPE_LINEITEM}'`,
+      });
+    }
+
+    try {
+      const response = await this.agsService.createLineItem(session, createLineItem);
+      const data: unknown = await response.json();
+
+      try {
+        return {
+          success: true,
+          data: LineItemSchema.parse(data),
+          response,
+        };
+      } catch (error) {
+        return platformResponseInvalid('ags', 'createLineItem', error);
+      }
+    } catch (error) {
+      return ltiServiceFailure(error, 'ags', 'createLineItem');
     }
   }
 
