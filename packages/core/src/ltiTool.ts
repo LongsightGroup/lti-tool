@@ -6,7 +6,9 @@ import type { LTIClient } from './interfaces/ltiClient.js';
 import type { LTIConfig } from './interfaces/ltiConfig.js';
 import type { LTIDeployment } from './interfaces/ltiDeployment.js';
 import type { LTIDynamicRegistrationSession } from './interfaces/ltiDynamicRegistrationSession.js';
+import type { LTILaunchConfig } from './interfaces/ltiLaunchConfig.js';
 import type { LTISession } from './interfaces/ltiSession.js';
+import type { LTIStorage } from './interfaces/ltiStorage.js';
 import { AddClientSchema, UpdateClientSchema } from './schemas/client.schema.js';
 import {
   type DynamicRegistrationForm,
@@ -53,6 +55,146 @@ import {
 } from './utils/ltiLaunchVerification.js';
 import { buildLtiLoginAuthUrl } from './utils/ltiLogin.js';
 import { normalizeLtiNrpsMembersResponse } from './utils/nrps.js';
+
+export interface LtiLaunchRegistrationInput {
+  /** Platform issuer URL that uniquely identifies the LMS */
+  iss: string;
+  /** OAuth2 client identifier assigned by the platform */
+  clientId: string;
+  /** LMS-provided deployment identifier used in LTI launch requests */
+  deploymentId: string;
+  /** Platform's OIDC authentication endpoint URL */
+  authUrl: string;
+  /** Platform's OAuth2 token endpoint URL for service access */
+  tokenUrl: string;
+  /** Platform's JSON Web Key Set endpoint URL for JWT verification */
+  jwksUrl: string;
+  /** Optional human-readable platform name. Defaults to the issuer for new clients. */
+  name?: string;
+  /** Optional human-readable deployment name when creating or updating the deployment. */
+  deploymentName?: string;
+  /** Optional deployment description when creating or updating the deployment. */
+  deploymentDescription?: string;
+}
+
+export interface LtiLaunchRegistrationUpsertResult {
+  client: LTIClient;
+  deployment: LTIDeployment;
+  launchConfig: LTILaunchConfig;
+  createdClient: boolean;
+  createdDeployment: boolean;
+}
+
+type StoredClient = Omit<LTIClient, 'deployments'>;
+
+const launchRegistrationClientInput = (
+  registration: LtiLaunchRegistrationInput,
+  existingClient?: StoredClient,
+): Omit<LTIClient, 'id' | 'deployments'> => {
+  return AddClientSchema.parse({
+    name: registration.name ?? existingClient?.name ?? registration.iss,
+    iss: registration.iss,
+    clientId: registration.clientId,
+    authUrl: registration.authUrl,
+    tokenUrl: registration.tokenUrl,
+    jwksUrl: registration.jwksUrl,
+  });
+};
+
+const findLaunchRegistrationClient = async (
+  storage: LTIStorage,
+  registration: LtiLaunchRegistrationInput,
+): Promise<StoredClient | undefined> => {
+  const clients = await storage.listClients();
+  return clients.find(
+    (client) =>
+      client.iss === registration.iss && client.clientId === registration.clientId,
+  );
+};
+
+const upsertLaunchRegistrationClient = async (
+  storage: LTIStorage,
+  registration: LtiLaunchRegistrationInput,
+): Promise<{ client: StoredClient; createdClient: boolean }> => {
+  const existingClient = await findLaunchRegistrationClient(storage, registration);
+  const clientInput = launchRegistrationClientInput(registration, existingClient);
+
+  if (existingClient === undefined) {
+    const clientId = await storage.addClient(clientInput);
+    return { client: { id: clientId, ...clientInput }, createdClient: true };
+  }
+
+  await storage.updateClient(existingClient.id, clientInput);
+  return { client: { id: existingClient.id, ...clientInput }, createdClient: false };
+};
+
+const launchRegistrationDeploymentInput = (
+  registration: LtiLaunchRegistrationInput,
+): Omit<LTIDeployment, 'id'> => ({
+  deploymentId: registration.deploymentId,
+  ...(registration.deploymentName === undefined
+    ? {}
+    : { name: registration.deploymentName }),
+  ...(registration.deploymentDescription === undefined
+    ? {}
+    : { description: registration.deploymentDescription }),
+});
+
+const upsertLaunchRegistrationDeployment = async (
+  storage: LTIStorage,
+  clientId: string,
+  registration: LtiLaunchRegistrationInput,
+): Promise<{
+  deployment: LTIDeployment;
+  deployments: LTIDeployment[];
+  createdDeployment: boolean;
+}> => {
+  const deployments = await storage.listDeployments(clientId);
+  const existingDeployment = deployments.find(
+    (deployment) => deployment.deploymentId === registration.deploymentId,
+  );
+  const deploymentInput = launchRegistrationDeploymentInput(registration);
+
+  if (existingDeployment === undefined) {
+    const deployment = {
+      id: await storage.addDeployment(clientId, deploymentInput),
+      ...deploymentInput,
+    };
+    return {
+      deployment,
+      deployments: [...deployments, deployment],
+      createdDeployment: true,
+    };
+  }
+
+  const deployment = { ...existingDeployment, ...deploymentInput };
+
+  if (
+    registration.deploymentName !== undefined ||
+    registration.deploymentDescription !== undefined
+  ) {
+    await storage.updateDeployment(clientId, existingDeployment.id, deploymentInput);
+  }
+
+  return {
+    deployment,
+    deployments: deployments.map((candidate) =>
+      candidate.id === deployment.id ? deployment : candidate,
+    ),
+    createdDeployment: false,
+  };
+};
+
+const launchConfigFromRegistration = (
+  registration: LtiLaunchRegistrationInput,
+): LTILaunchConfig => ({
+  iss: registration.iss,
+  clientId: registration.clientId,
+  deploymentId: registration.deploymentId,
+  authUrl: registration.authUrl,
+  tokenUrl: registration.tokenUrl,
+  jwksUrl: registration.jwksUrl,
+});
 
 /**
  * Main LTI 1.3 Tool implementation providing secure authentication, launch verification,
@@ -780,6 +922,47 @@ export class LTITool {
     } catch (error) {
       throw new Error(
         `[Client] Creation failed for issuer '${client.iss}': ${formatError(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Adds or updates launch registration records using platform identifiers.
+   *
+   * This helper matches clients by issuer and OAuth client ID, matches deployments by
+   * the LMS-provided deployment ID under the stored client, and saves the launch
+   * configuration used by OIDC login and launch verification.
+   *
+   * @param registration - Platform identifiers and launch endpoints
+   * @returns Stored client, deployment, launch config, and created flags
+   */
+  async upsertLaunchRegistration(
+    registration: LtiLaunchRegistrationInput,
+  ): Promise<LtiLaunchRegistrationUpsertResult> {
+    try {
+      const { client, createdClient } = await upsertLaunchRegistrationClient(
+        this.config.storage,
+        registration,
+      );
+      const { deployment, deployments, createdDeployment } =
+        await upsertLaunchRegistrationDeployment(
+          this.config.storage,
+          client.id,
+          registration,
+        );
+      const launchConfig = launchConfigFromRegistration(registration);
+      await this.config.storage.saveLaunchConfig(launchConfig);
+
+      return {
+        client: { ...client, deployments },
+        deployment,
+        launchConfig,
+        createdClient,
+        createdDeployment,
+      };
+    } catch (error) {
+      throw new Error(
+        `[Launch Registration] Upsert failed for issuer '${registration.iss}', client '${registration.clientId}', deployment '${registration.deploymentId}': ${formatError(error)}`,
       );
     }
   }

@@ -58,4 +58,8 @@ export {
   serializeLtiDynamicRegistrationSession,
   serializeLtiSession,
 } from './utils/ltiSessionCodecs.js';
-export { LTITool } from './ltiTool.js';
+export {
+  LTITool,
+  type LtiLaunchRegistrationInput,
+  type LtiLaunchRegistrationUpsertResult,
+} from './ltiTool.js';
