@@ -1,0 +1,90 @@
+name: Release Tarballs
+
+on:
+  push:
+    tags:
+      - 'core-v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to create or update, for example core-v1.1.4-longsight.1'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  core:
+    name: Pack @lti-tool/core
+    if: github.repository == 'LongsightGroup/lti-tool'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check format
+        run: npm run format
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Test
+        run: npm test
+
+      - name: Run core integration tests
+        run: npx vitest run packages/core/test/*.integration.test.ts
+
+      - name: Build core package
+        run: npm run build --workspace=@lti-tool/core
+
+      - name: Pack core package
+        id: pack
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          tarball="$(npm pack --workspace=@lti-tool/core --pack-destination artifacts)"
+          {
+            echo "tarball=artifacts/${tarball}"
+            echo "asset_name=${tarball}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release tag
+        id: release_tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag_name=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.release_tag.outputs.tag_name }}
+          ASSET_PATH: ${{ steps.pack.outputs.tarball }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$ASSET_PATH" --clobber
+          else
+            gh release create "$TAG_NAME" "$ASSET_PATH" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG_NAME" \
+              --notes "Tarball release for @lti-tool/core from LongsightGroup/lti-tool."
+          fi
