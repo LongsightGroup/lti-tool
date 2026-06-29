@@ -138,9 +138,9 @@ export class D1Storage implements LTIStorage {
 
   async getDeployment(
     clientId: string,
-    deploymentInternalId: string,
+    deploymentId: string,
   ): Promise<LTIDeployment | undefined> {
-    this.logger.debug({ clientId, deploymentInternalId }, 'getting deployment by id');
+    this.logger.debug({ clientId, deploymentId }, 'getting deployment by platform id');
 
     const [deployment] = await this.db
       .select()
@@ -148,7 +148,7 @@ export class D1Storage implements LTIStorage {
       .where(
         and(
           eq(schema.deploymentsTable.clientId, clientId),
-          eq(schema.deploymentsTable.id, deploymentInternalId),
+          eq(schema.deploymentsTable.deploymentId, deploymentId),
         ),
       )
       .limit(1);
@@ -187,7 +187,7 @@ export class D1Storage implements LTIStorage {
       'updating deployment',
     );
 
-    const existing = await this.getDeployment(clientId, deploymentInternalId);
+    const existing = await this.getDeploymentByInternalId(clientId, deploymentInternalId);
     if (!existing) throw new Error('Deployment not found');
 
     const updated = {
@@ -428,6 +428,26 @@ export class D1Storage implements LTIStorage {
       .limit(1);
 
     return row;
+  }
+
+  private async getDeploymentByInternalId(
+    clientId: string,
+    deploymentInternalId: string,
+  ): Promise<LTIDeployment | undefined> {
+    this.logger.debug({ clientId, deploymentInternalId }, 'getting deployment by internal id');
+
+    const [deployment] = await this.db
+      .select()
+      .from(schema.deploymentsTable)
+      .where(
+        and(
+          eq(schema.deploymentsTable.clientId, clientId),
+          eq(schema.deploymentsTable.id, deploymentInternalId),
+        ),
+      )
+      .limit(1);
+
+    return deployment ? mapDeploymentRow(deployment) : undefined;
   }
 }
 

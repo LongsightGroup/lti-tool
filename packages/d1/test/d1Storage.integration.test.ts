@@ -118,7 +118,7 @@ describe('D1Storage with Miniflare D1', () => {
   });
 
   describe('deployment operations', () => {
-    it('uses internal deployment IDs for deployment management and platform deployment IDs for launch config', async () => {
+    it('retrieves deployments by platform deployment ID for launch verification', async () => {
       const clientInternalId = await harness.storage<string>('addClient', testClient);
       const deploymentInternalId = await harness.storage<string>(
         'addDeployment',
@@ -127,13 +127,13 @@ describe('D1Storage with Miniflare D1', () => {
       );
 
       await expect(
-        harness.storage('getDeployment', clientInternalId, deploymentInternalId),
+        harness.storage('getDeployment', clientInternalId, testDeployment.deploymentId),
       ).resolves.toMatchObject({
         id: deploymentInternalId,
         deploymentId: testDeployment.deploymentId,
       });
       await expect(
-        harness.storage('getDeployment', clientInternalId, testDeployment.deploymentId),
+        harness.storage('getDeployment', clientInternalId, deploymentInternalId),
       ).resolves.toBeNull();
 
       await expect(
@@ -187,7 +187,7 @@ describe('D1Storage with Miniflare D1', () => {
         name: 'Updated Deployment',
       });
       await expect(
-        harness.storage('getDeployment', clientInternalId, deploymentA),
+        harness.storage('getDeployment', clientInternalId, 'updated-platform-deployment'),
       ).resolves.toMatchObject({
         id: deploymentA,
         deploymentId: 'updated-platform-deployment',
@@ -196,10 +196,10 @@ describe('D1Storage with Miniflare D1', () => {
 
       await harness.storage('deleteDeployment', clientInternalId, deploymentA);
       await expect(
-        harness.storage('getDeployment', clientInternalId, deploymentA),
+        harness.storage('getDeployment', clientInternalId, 'updated-platform-deployment'),
       ).resolves.toBeNull();
       await expect(
-        harness.storage('getDeployment', clientInternalId, deploymentB),
+        harness.storage('getDeployment', clientInternalId, 'a-platform-deployment'),
       ).resolves.toBeDefined();
     });
 
