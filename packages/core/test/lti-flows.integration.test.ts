@@ -90,6 +90,20 @@ describe('LTI Integration Tests', () => {
     ltiTool = new LTITool(config);
 
     // Setup default storage mocks
+    vi.mocked(mockStorage.getClientById).mockResolvedValue({
+      id: 'client123',
+      name: 'Platform Example',
+      iss: 'https://platform.example.com',
+      clientId: 'client123',
+      authUrl: 'https://platform.example.com/auth',
+      tokenUrl: 'https://platform.example.com/token',
+      jwksUrl: 'https://platform.example.com/.well-known/jwks',
+      deployments: [],
+    });
+    vi.mocked(mockStorage.getDeployment).mockResolvedValue({
+      id: 'deployment-internal-1',
+      deploymentId: 'deployment1',
+    });
     vi.mocked(mockStorage.getLaunchConfig).mockResolvedValue({
       iss: 'https://platform.example.com',
       clientId: 'client123',
@@ -360,6 +374,121 @@ describe('LTI Integration Tests', () => {
       if (result.success) throw new Error('Expected launch verification failure');
       expect(result.error).toBeInstanceOf(LtiLaunchVerificationError);
       expect(result.error.code).toBe('invalid_launch_parameters');
+    });
+
+    it('reports unknown launch clients precisely', async () => {
+      vi.mocked(mockStorage.getClientById).mockResolvedValue(undefined);
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const { SignJWT } = await import('jose');
+      const jwt = await new SignJWT(ltiPayload)
+        .setProtectedHeader({ alg: 'RS256', kid: 'platform-key' })
+        .sign(platformKeyPair.privateKey);
+      const stateJwt = await new SignJWT({
+        nonce: 'test-nonce',
+        iss: 'https://platform.example.com',
+        client_id: 'client123',
+        target_link_uri: 'https://tool.example.com/content',
+        exp: Math.floor(Date.now() / 1000) + 300,
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .sign(stateSecret);
+
+      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected launch verification failure');
+      expect(result.error.code).toBe('launch_client_not_found');
+    });
+
+    it('reports missing launch deployments precisely', async () => {
+      vi.mocked(mockStorage.getDeployment).mockResolvedValue(undefined);
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const { SignJWT } = await import('jose');
+      const jwt = await new SignJWT(ltiPayload)
+        .setProtectedHeader({ alg: 'RS256', kid: 'platform-key' })
+        .sign(platformKeyPair.privateKey);
+      const stateJwt = await new SignJWT({
+        nonce: 'test-nonce',
+        iss: 'https://platform.example.com',
+        client_id: 'client123',
+        target_link_uri: 'https://tool.example.com/content',
+        exp: Math.floor(Date.now() / 1000) + 300,
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .sign(stateSecret);
+
+      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected launch verification failure');
+      expect(result.error.code).toBe('launch_deployment_not_found');
+    });
+
+    it('reports missing launch endpoints precisely', async () => {
+      vi.mocked(mockStorage.getClientById).mockResolvedValue({
+        id: 'client123',
+        name: 'Platform Example',
+        iss: 'https://platform.example.com',
+        clientId: 'client123',
+        authUrl: 'https://platform.example.com/auth',
+        tokenUrl: 'https://platform.example.com/token',
+        jwksUrl: '',
+        deployments: [],
+      });
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const { SignJWT } = await import('jose');
+      const jwt = await new SignJWT(ltiPayload)
+        .setProtectedHeader({ alg: 'RS256', kid: 'platform-key' })
+        .sign(platformKeyPair.privateKey);
+      const stateJwt = await new SignJWT({
+        nonce: 'test-nonce',
+        iss: 'https://platform.example.com',
+        client_id: 'client123',
+        target_link_uri: 'https://tool.example.com/content',
+        exp: Math.floor(Date.now() / 1000) + 300,
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .sign(stateSecret);
+
+      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected launch verification failure');
+      expect(result.error.code).toBe('launch_config_missing_jwks_endpoint');
+    });
+
+    it('reports launch config storage failures precisely', async () => {
+      vi.mocked(mockStorage.getClientById).mockRejectedValue(
+        new Error('database unavailable'),
+      );
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const { SignJWT } = await import('jose');
+      const jwt = await new SignJWT(ltiPayload)
+        .setProtectedHeader({ alg: 'RS256', kid: 'platform-key' })
+        .sign(platformKeyPair.privateKey);
+      const stateJwt = await new SignJWT({
+        nonce: 'test-nonce',
+        iss: 'https://platform.example.com',
+        client_id: 'client123',
+        target_link_uri: 'https://tool.example.com/content',
+        exp: Math.floor(Date.now() / 1000) + 300,
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .sign(stateSecret);
+
+      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected launch verification failure');
+      expect(result.error.code).toBe('launch_config_lookup_failed');
     });
 
     it('successfully verifies LTI launch JWT with array audience', async () => {

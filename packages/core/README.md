@@ -57,6 +57,10 @@ const result = await ltiTool.verifyLaunchDetailed(idToken, state);
 
 if (result.success) {
   const session = await ltiTool.createSessionFromVerifiedLaunch(result.launch);
+} else if (result.error.code === 'launch_config_missing_jwks_endpoint') {
+  // Known client needs administrator setup before signed launches can work.
+} else if (result.error.code === 'launch_client_not_found') {
+  // Unknown issuer/client pair. Treat as an untrusted launch attempt.
 }
 ```
 
