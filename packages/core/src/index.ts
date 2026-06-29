@@ -78,6 +78,13 @@ export {
   type ParsedLtiLaunchForm,
 } from './utils/ltiRequestParsing.js';
 export {
+  resolveLtiServiceCapabilities,
+  type LtiAgsServiceCapabilities,
+  type LtiDeepLinkingServiceCapabilities,
+  type LtiNrpsServiceCapabilities,
+  type LtiServiceCapabilities,
+} from './utils/ltiServiceCapabilities.js';
+export {
   importLtiToolKeyPairFromJwk,
   LtiToolKeyPairImportError,
   type LtiToolKeyMaterial,
