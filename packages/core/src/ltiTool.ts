@@ -1,6 +1,13 @@
 import { exportJWK, SignJWT } from 'jose';
 import type { Logger } from 'pino';
 
+import { LTI_AGS_SCOPE_SCORE } from './constants.js';
+import {
+  LtiServiceError,
+  type LtiServiceErrorCode,
+  type LtiServiceKind,
+  type LtiServiceResult,
+} from './errors/ltiServiceError.js';
 import type { JWKS } from './interfaces/jwks.js';
 import type { LTIClient } from './interfaces/ltiClient.js';
 import type { LTIConfig } from './interfaces/ltiConfig.js';
@@ -197,6 +204,67 @@ const launchConfigFromRegistration = (
   authUrl: registration.authUrl,
   tokenUrl: registration.tokenUrl,
   jwksUrl: registration.jwksUrl,
+});
+
+const ltiServiceFailure = <T>(
+  error: unknown,
+  serviceKind: Exclude<LtiServiceKind, 'token'>,
+  operation: string,
+): LtiServiceResult<T> => {
+  if (error instanceof LtiServiceError) {
+    return {
+      success: false,
+      error: new LtiServiceError({
+        code: error.code,
+        serviceKind,
+        operation,
+        message: error.message,
+        cause: error,
+        endpointType: error.endpointType,
+        status: error.status,
+        statusText: error.statusText,
+        responseBodySummary: error.responseBodySummary,
+      }),
+    };
+  }
+
+  const message = formatError(error);
+
+  return {
+    success: false,
+    error: new LtiServiceError({
+      code: 'platform_request_failed',
+      serviceKind,
+      operation,
+      message,
+      cause: error,
+    }),
+  };
+};
+
+const ltiServicePreconditionFailure = <T>(input: {
+  code: Extract<LtiServiceErrorCode, 'service_not_available' | 'missing_required_scope'>;
+  serviceKind: LtiServiceKind;
+  operation: string;
+  message: string;
+}): LtiServiceResult<T> => ({
+  success: false,
+  error: new LtiServiceError(input),
+});
+
+const platformResponseInvalid = <T>(
+  serviceKind: LtiServiceKind,
+  operation: string,
+  error: unknown,
+): LtiServiceResult<T> => ({
+  success: false,
+  error: new LtiServiceError({
+    code: 'platform_response_invalid',
+    serviceKind,
+    operation,
+    message: formatError(error),
+    cause: error,
+  }),
 });
 
 /**
@@ -529,6 +597,43 @@ export class LTITool {
   }
 
   /**
+   * Submits a grade score and returns a structured result instead of throwing.
+   *
+   * @param session - Active LTI session containing AGS service endpoints
+   * @param score - Score submission data including grade value and user ID
+   * @returns Structured success or stable service error result
+   */
+  async submitScoreDetailed(
+    session: LTISession,
+    score: ScoreSubmission,
+  ): Promise<LtiServiceResult<void>> {
+    if (!session.services?.ags?.lineitem) {
+      return ltiServicePreconditionFailure({
+        code: 'service_not_available',
+        serviceKind: 'ags',
+        operation: 'submitScore',
+        message: 'AGS line item service is not available for this session',
+      });
+    }
+
+    if (!session.services.ags.scopes.includes(LTI_AGS_SCOPE_SCORE)) {
+      return ltiServicePreconditionFailure({
+        code: 'missing_required_scope',
+        serviceKind: 'ags',
+        operation: 'submitScore',
+        message: `Missing required AGS scope '${LTI_AGS_SCOPE_SCORE}'`,
+      });
+    }
+
+    try {
+      const response = await this.agsService.submitScore(session, score);
+      return { success: true, data: undefined, response };
+    } catch (error) {
+      return ltiServiceFailure(error, 'ags', 'submitScore');
+    }
+  }
+
+  /**
    * Retrieves all scores for a specific line item from the platform using Assignment and Grade Services (AGS).
    *
    * @param session - Active LTI session containing AGS service endpoints
@@ -733,6 +838,40 @@ export class LTITool {
       throw new Error(
         `[NRPS] Members retrieval failed for session '${session.id}': ${formatError(error)}`,
       );
+    }
+  }
+
+  /**
+   * Retrieves course/context members and returns a structured result instead of throwing.
+   *
+   * @param session - Active LTI session containing NRPS service endpoints
+   * @returns Structured success with normalized members or stable service error result
+   */
+  async getMembersDetailed(session: LTISession): Promise<LtiServiceResult<Member[]>> {
+    if (!session.services?.nrps?.membershipUrl) {
+      return ltiServicePreconditionFailure({
+        code: 'service_not_available',
+        serviceKind: 'nrps',
+        operation: 'getMembers',
+        message: 'NRPS membership service is not available for this session',
+      });
+    }
+
+    try {
+      const response = await this.nrpsService.getMembers(session);
+      const data: unknown = await response.json();
+
+      try {
+        return {
+          success: true,
+          data: normalizeLtiNrpsMembersResponse(data),
+          response,
+        };
+      } catch (error) {
+        return platformResponseInvalid('nrps', 'getMembers', error);
+      }
+    } catch (error) {
+      return ltiServiceFailure(error, 'nrps', 'getMembers');
     }
   }
 

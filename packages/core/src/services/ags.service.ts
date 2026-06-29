@@ -6,6 +6,10 @@ import {
   LTI_AGS_SCOPE_RESULT_READONLY,
   LTI_AGS_SCOPE_SCORE,
 } from '../constants.js';
+import {
+  LtiServiceError,
+  summarizeLtiServiceResponseBody,
+} from '../errors/ltiServiceError.js';
 import type { LTISession } from '../interfaces/ltiSession.js';
 import type { LTIStorage } from '../interfaces/ltiStorage.js';
 import type {
@@ -400,12 +404,21 @@ export class AGSService {
     operation: string,
   ): Promise<void> {
     if (!response.ok) {
-      const error = await response.json();
+      const responseBodySummary = await summarizeLtiServiceResponseBody(response);
       this.logger.error(
-        { error, status: response.status, statusText: response.statusText },
+        { responseBodySummary, status: response.status, statusText: response.statusText },
         `AGS ${operation} failed`,
       );
-      throw new Error(`AGS ${operation} failed: ${response.statusText} ${error}`);
+      throw new LtiServiceError({
+        code: 'platform_request_failed',
+        serviceKind: 'ags',
+        operation,
+        message: `AGS ${operation} failed: ${response.status} ${response.statusText}`,
+        endpointType: 'ags',
+        status: response.status,
+        statusText: response.statusText,
+        responseBodySummary,
+      });
     }
   }
 }

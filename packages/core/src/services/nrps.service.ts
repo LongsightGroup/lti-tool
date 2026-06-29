@@ -1,6 +1,10 @@
 import type { BaseLogger } from 'pino';
 
 import { LTI_NRPS_SCOPE_CONTEXT_MEMBERSHIP_READONLY } from '../constants.js';
+import {
+  LtiServiceError,
+  summarizeLtiServiceResponseBody,
+} from '../errors/ltiServiceError.js';
 import type { LTISession } from '../interfaces/ltiSession.js';
 import type { LTIStorage } from '../interfaces/ltiStorage.js';
 import { getValidLaunchConfig } from '../utils/launchConfigValidation.js';
@@ -85,12 +89,21 @@ export class NRPSService {
     operation: string,
   ): Promise<void> {
     if (!response.ok) {
-      const error = await response.json();
+      const responseBodySummary = await summarizeLtiServiceResponseBody(response);
       this.logger.error(
-        { error, status: response.status, statusText: response.statusText },
+        { responseBodySummary, status: response.status, statusText: response.statusText },
         `NRPS ${operation} failed`,
       );
-      throw new Error(`NRPS ${operation} failed: ${response.statusText} ${error}`);
+      throw new LtiServiceError({
+        code: 'platform_request_failed',
+        serviceKind: 'nrps',
+        operation,
+        message: `NRPS ${operation} failed: ${response.status} ${response.statusText}`,
+        endpointType: 'nrps',
+        status: response.status,
+        statusText: response.statusText,
+        responseBodySummary,
+      });
     }
   }
 }

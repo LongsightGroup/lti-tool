@@ -6,6 +6,7 @@ import {
   LTI_AGS_SCOPE_RESULT_READONLY,
   LTI_AGS_SCOPE_SCORE,
 } from '../src/constants.js';
+import type { LtiServiceError } from '../src/errors/ltiServiceError.js';
 import type { LTISession, LTIStorage } from '../src/interfaces/index.js';
 import type { ScoreSubmission } from '../src/schemas/lti13/ags/scoreSubmission.schema.js';
 import { AGSService } from '../src/services/ags.service.js';
@@ -197,25 +198,34 @@ describe('AGSService', () => {
     });
 
     it('throws error when platform returns error response', async () => {
-      const mockErrorResponse = {
-        ok: false,
-        status: 400,
-        statusText: 'Bad Request',
-        json: vi.fn().mockResolvedValue({
+      const mockErrorResponse = Response.json(
+        {
           error: 'invalid_score',
           error_description: 'Score value is invalid',
-        }),
-      };
+        },
+        { status: 400, statusText: 'Bad Request' },
+      );
       mockFetch.mockResolvedValue(mockErrorResponse);
 
       await expect(
         agsService.submitScore(mockSession, mockScoreSubmission),
-      ).rejects.toThrow('AGS score submission failed: Bad Request');
+      ).rejects.toMatchObject({
+        name: 'LtiServiceError',
+        code: 'platform_request_failed',
+        serviceKind: 'ags',
+        operation: 'score submission',
+        endpointType: 'ags',
+        status: 400,
+        statusText: 'Bad Request',
+        responseBodySummary:
+          '{"error":"invalid_score","error_description":"Score value is invalid"}',
+      } satisfies Partial<LtiServiceError>);
 
       // Verify error was logged
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
-          error: { error: 'invalid_score', error_description: 'Score value is invalid' },
+          responseBodySummary:
+            '{"error":"invalid_score","error_description":"Score value is invalid"}',
           status: 400,
           statusText: 'Bad Request',
         },

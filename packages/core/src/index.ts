@@ -86,3 +86,11 @@ export {
   type LtiLaunchRegistrationInput,
   type LtiLaunchRegistrationUpsertResult,
 } from './ltiTool.js';
+
+export {
+  LtiServiceError,
+  type LtiServiceErrorCode,
+  type LtiServiceErrorInput,
+  type LtiServiceKind,
+  type LtiServiceResult,
+} from './errors/ltiServiceError.js';

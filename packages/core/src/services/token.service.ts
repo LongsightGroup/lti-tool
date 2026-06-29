@@ -1,5 +1,9 @@
 import { SignJWT } from 'jose';
 
+import {
+  LtiServiceError,
+  summarizeLtiServiceResponseBody,
+} from '../errors/ltiServiceError.js';
 import { ltiServiceFetch } from '../utils/ltiServiceFetch.js';
 
 /**
@@ -75,16 +79,28 @@ export class TokenService {
     });
 
     if (!response.ok) {
-      const errorDetail = await response.json();
-      throw new Error(
-        `Token request failed: ${response.status} ${response.statusText} ${errorDetail}`,
-      );
+      throw new LtiServiceError({
+        code: 'token_request_failed',
+        serviceKind: 'token',
+        operation: 'getBearerToken',
+        message: `Token request failed: ${response.status} ${response.statusText}`,
+        endpointType: 'token',
+        status: response.status,
+        statusText: response.statusText,
+        responseBodySummary: await summarizeLtiServiceResponseBody(response),
+      });
     }
 
     const tokenData = await response.json();
 
     if (!tokenData.access_token) {
-      throw new Error('Token response missing access_token');
+      throw new LtiServiceError({
+        code: 'token_request_failed',
+        serviceKind: 'token',
+        operation: 'getBearerToken',
+        message: 'Token response missing access_token',
+        endpointType: 'token',
+      });
     }
 
     return tokenData.access_token;
