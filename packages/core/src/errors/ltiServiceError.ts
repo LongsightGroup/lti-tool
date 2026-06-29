@@ -52,6 +52,18 @@ export type LtiServiceResult<T> =
   | { success: true; data: T; response?: Response }
   | { success: false; error: LtiServiceError };
 
+/**
+ * Formats an LTI service error for safe logs, HTTP responses, or persisted failure records.
+ */
+export function formatLtiServiceError(error: LtiServiceError): string {
+  const status =
+    error.status === undefined
+      ? ''
+      : ` status ${error.status}${error.statusText ? ` ${error.statusText}` : ''}`;
+  const body = error.responseBodySummary ? `: ${error.responseBodySummary}` : '';
+  return `${error.message}${status}${body}`;
+}
+
 export async function summarizeLtiServiceResponseBody(
   response: Response,
 ): Promise<string | undefined> {

@@ -91,6 +91,7 @@ export {
 } from './ltiTool.js';
 
 export {
+  formatLtiServiceError,
   LtiServiceError,
   type LtiServiceErrorCode,
   type LtiServiceErrorInput,
