@@ -44,7 +44,10 @@ export {
   isLtiNrpsAvailable,
   normalizeLtiNrpsMembersResponse,
   partitionLtiMembersByRoleKind,
+  resolveLtiNrpsRoster,
   type LtiNrpsService,
+  type ResolvedLtiNrpsRoster,
+  type ResolvedLtiNrpsRosterMember,
 } from './utils/nrps.js';
 export {
   createLtiPostMessageStorageRedirect,

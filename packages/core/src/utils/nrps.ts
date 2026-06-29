@@ -15,6 +15,24 @@ import {
 
 export type LtiNrpsService = NonNullable<NonNullable<LTISession['services']>['nrps']>;
 
+export interface ResolvedLtiNrpsRosterMember {
+  userId: string;
+  displayName: string;
+  roles: string[];
+  isLearner: boolean;
+  isInstructor: boolean;
+  status: Member['status'];
+  email?: string;
+  picture?: string;
+  lisPersonSourcedId?: string;
+}
+
+export interface ResolvedLtiNrpsRoster {
+  members: ResolvedLtiNrpsRosterMember[];
+  learnerMembers: ResolvedLtiNrpsRosterMember[];
+  instructorMembers: ResolvedLtiNrpsRosterMember[];
+}
+
 export function getLtiNrpsService(session: LTISession): LtiNrpsService | undefined {
   return session.services?.nrps;
 }
@@ -91,4 +109,30 @@ export function partitionLtiMembersByRoleKind(
   }
 
   return { matching, rest };
+}
+
+export function resolveLtiNrpsRoster(members: readonly Member[]): ResolvedLtiNrpsRoster {
+  const resolvedMembers = members.map((member) => {
+    const resolvedMember: ResolvedLtiNrpsRosterMember = {
+      userId: member.userId,
+      displayName: getLtiMemberDisplayName(member),
+      roles: [...member.roles],
+      isLearner: isLtiMemberLearner(member),
+      isInstructor: isLtiMemberInstructor(member),
+      status: member.status,
+      ...(member.email === undefined ? {} : { email: member.email }),
+      ...(member.picture === undefined ? {} : { picture: member.picture }),
+      ...(member.lisPersonSourcedId === undefined
+        ? {}
+        : { lisPersonSourcedId: member.lisPersonSourcedId }),
+    };
+
+    return resolvedMember;
+  });
+
+  return {
+    members: resolvedMembers,
+    learnerMembers: resolvedMembers.filter((member) => member.isLearner),
+    instructorMembers: resolvedMembers.filter((member) => member.isInstructor),
+  };
 }
