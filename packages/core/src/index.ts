@@ -53,6 +53,15 @@ export {
   type LtiVerifiedLaunch,
 } from './utils/ltiLaunchVerification.js';
 export {
+  LtiRequestParseError,
+  parseLtiDeepLinkingResponseRequest,
+  parseLtiLaunchFormData,
+  parseLtiLoginRequest,
+  type LtiRequestParseErrorCode,
+  type ParsedLtiDeepLinkingResponseRequest,
+  type ParsedLtiLaunchForm,
+} from './utils/ltiRequestParsing.js';
+export {
   parsePersistedLtiDynamicRegistrationSession,
   parsePersistedLtiSession,
   serializeLtiDynamicRegistrationSession,
