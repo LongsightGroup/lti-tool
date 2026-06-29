@@ -434,7 +434,10 @@ export class D1Storage implements LTIStorage {
     clientId: string,
     deploymentInternalId: string,
   ): Promise<LTIDeployment | undefined> {
-    this.logger.debug({ clientId, deploymentInternalId }, 'getting deployment by internal id');
+    this.logger.debug(
+      { clientId, deploymentInternalId },
+      'getting deployment by internal id',
+    );
 
     const [deployment] = await this.db
       .select()
