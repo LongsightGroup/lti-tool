@@ -49,6 +49,34 @@ When creating a session from a payload not returned directly by `verifyLaunch` o
 the same `LTITool` instance, pass the verified client ID as the second argument
 if the launch ID token contains multiple audiences.
 
+## Persisted session JSON
+
+Database-backed `LTIStorage` adapters can use the exported codecs to keep JSON
+parsing aligned with the core session types:
+
+```typescript
+import {
+  parsePersistedLtiSession,
+  serializeLtiSession,
+  type LTIStorage,
+} from '@lti-tool/core';
+
+class DatabaseStorage implements LTIStorage {
+  async getSession(sessionId: string) {
+    const row = await db.findSession(sessionId);
+    return row === undefined ? undefined : parsePersistedLtiSession(row.dataJson);
+  }
+
+  async addSession(session) {
+    await db.insertSession({
+      id: session.id,
+      dataJson: serializeLtiSession(session),
+    });
+    return session.id;
+  }
+}
+```
+
 ## Documentation
 
 - [API Reference](https://docs.lti-tool.dev) - Complete API documentation

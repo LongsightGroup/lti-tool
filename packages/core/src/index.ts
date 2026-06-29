@@ -52,4 +52,10 @@ export {
   type LtiLaunchVerificationResult,
   type LtiVerifiedLaunch,
 } from './utils/ltiLaunchVerification.js';
+export {
+  parsePersistedLtiDynamicRegistrationSession,
+  parsePersistedLtiSession,
+  serializeLtiDynamicRegistrationSession,
+  serializeLtiSession,
+} from './utils/ltiSessionCodecs.js';
 export { LTITool } from './ltiTool.js';
