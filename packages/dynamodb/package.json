@@ -26,6 +26,11 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -40,10 +45,10 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1068.0",
     "@aws-sdk/util-dynamodb": "^3.996.4",
-    "@lti-tool/core": "*",
     "lru-cache": "^11.5.1"
   },
   "peerDependencies": {
+    "@lti-tool/core": "^1.1.4",
     "pino": "^9.9.0"
   },
   "peerDependenciesMeta": {
@@ -52,6 +57,7 @@
     }
   },
   "devDependencies": {
+    "@lti-tool/core": "*",
     "pino": "^10.3.1"
   }
 }

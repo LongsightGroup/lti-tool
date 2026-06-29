@@ -25,6 +25,11 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -37,10 +42,10 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@lti-tool/core": "*",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
+    "@lti-tool/core": "^1.1.4",
     "hono": "^4.12.18",
     "pino": "^9.11.0"
   },
@@ -50,6 +55,7 @@
     }
   },
   "devDependencies": {
+    "@lti-tool/core": "*",
     "hono": "^4.12.25",
     "pino": "^10.3.1"
   }

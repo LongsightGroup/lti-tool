@@ -26,6 +26,13 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "drizzle",
+    "README.md",
+    "CHANGELOG.md",
+    "drizzle.config.ts"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -38,12 +45,12 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@lti-tool/core": "*",
     "drizzle-orm": "^0.45.2",
     "lru-cache": "^11.5.1",
     "postgres": "^3.4.9"
   },
   "peerDependencies": {
+    "@lti-tool/core": "^1.1.4",
     "pino": "^9.9.0"
   },
   "peerDependenciesMeta": {
@@ -52,6 +59,7 @@
     }
   },
   "devDependencies": {
+    "@lti-tool/core": "*",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "pino": "^10.3.1"

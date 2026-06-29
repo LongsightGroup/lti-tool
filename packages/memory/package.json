@@ -25,6 +25,11 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -35,10 +40,8 @@
     "build": "tsc",
     "dev": "tsc --watch"
   },
-  "dependencies": {
-    "@lti-tool/core": "*"
-  },
   "peerDependencies": {
+    "@lti-tool/core": "^1.1.4",
     "pino": "^9.9.0"
   },
   "peerDependenciesMeta": {
@@ -47,6 +50,7 @@
     }
   },
   "devDependencies": {
+    "@lti-tool/core": "*",
     "pino": "^10.3.1"
   }
 }
