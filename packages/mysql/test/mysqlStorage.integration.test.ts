@@ -171,7 +171,7 @@ describe('MySqlStorage - Launch Config', () => {
     expect(config?.authUrl).toBe(testClient.authUrl);
   });
 
-  it('should fallback to default deployment', async () => {
+  it('should return undefined when requested deployment is missing', async () => {
     const clientId = await storage.addClient(testClient);
     await storage.addDeployment(clientId, { deploymentId: 'default' });
 
@@ -181,7 +181,7 @@ describe('MySqlStorage - Launch Config', () => {
       'nonexistent',
     );
 
-    expect(config?.deploymentId).toBe('default');
+    expect(config).toBeUndefined();
   });
 });
 

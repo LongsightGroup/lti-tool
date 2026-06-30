@@ -6,6 +6,7 @@ import {
   type LTILaunchConfig,
   type LTISession,
 } from '@longsightgroup/lti-tool';
+import type { Logger } from 'pino';
 
 export type ClientRow = Omit<LTIClient, 'deployments'>;
 
@@ -37,14 +38,34 @@ export function toSessionDataRow(session: LTISession): SessionDataRow {
   return { id, data };
 }
 
-export function parseSessionDataRow(row: SessionDataRow): LTISession | undefined {
+export function parseSessionDataRow(
+  row: SessionDataRow,
+  logger?: Pick<Logger, 'warn'>,
+): LTISession | undefined {
   const parsed = LTISessionSchema.safeParse({ id: row.id, ...row.data });
-  return parsed.success ? parsed.data : undefined;
+  if (!parsed.success) {
+    logger?.warn(
+      { sessionId: row.id, issues: parsed.error.issues },
+      'invalid persisted session data',
+    );
+    return undefined;
+  }
+
+  return parsed.data;
 }
 
 export function parseRegistrationSessionDataRow(
   row: RegistrationSessionDataRow,
+  logger?: Pick<Logger, 'warn'>,
 ): LTIDynamicRegistrationSession | undefined {
   const parsed = LTIDynamicRegistrationSessionSchema.safeParse(row.data);
-  return parsed.success ? parsed.data : undefined;
+  if (!parsed.success) {
+    logger?.warn(
+      { issues: parsed.error.issues },
+      'invalid persisted registration session data',
+    );
+    return undefined;
+  }
+
+  return parsed.data;
 }

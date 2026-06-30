@@ -316,6 +316,7 @@ function createDynamoConformanceMock(): (command: unknown) => unknown {
   const clients = new Map<string, Record<string, unknown>>();
   const deployments = new Map<string, Map<string, Record<string, unknown>>>();
   const nonces = new Set<string>();
+  const registrationSessions = new Map<string, Record<string, unknown>>();
 
   return (command: unknown) => {
     const input = commandInput(command);
@@ -334,6 +335,12 @@ function createDynamoConformanceMock(): (command: unknown) => unknown {
         return dynamoOk();
       }
       if (input.TableName === 'dataPlane') {
+        const pk = String(item.pk ?? '');
+        if (pk.startsWith('DYNREG#')) {
+          registrationSessions.set(pk, item);
+          return dynamoOk();
+        }
+
         const nonce = String(item.nonce);
         if (nonces.has(nonce)) {
           throw new ConditionalCheckFailedException({
@@ -389,6 +396,12 @@ function createDynamoConformanceMock(): (command: unknown) => unknown {
         return deployment === undefined
           ? dynamoOk()
           : { ...dynamoOk(), Item: marshall(deployment) };
+      }
+      if (input.TableName === 'dataPlane') {
+        const session = registrationSessions.get(String(key.pk));
+        return session === undefined
+          ? dynamoOk()
+          : { ...dynamoOk(), Item: marshall(session) };
       }
       if (input.TableName === 'launchConfigs') return dynamoOk();
     }

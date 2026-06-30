@@ -1,4 +1,9 @@
-import type { LTIClient, LTIStorage } from '@longsightgroup/lti-tool';
+import {
+  LTI_CLAIM_PLATFORM_CONFIGURATION,
+  type LTIClient,
+  type LTIDynamicRegistrationSession,
+  type LTIStorage,
+} from '@longsightgroup/lti-tool';
 import { describe, expect, it } from 'vitest';
 
 type StorageFactory = {
@@ -37,6 +42,10 @@ export function defineStorageConformanceSuite(
 
     it('atomically rejects nonce replay', async () => {
       await withStorage(factory, assertNonceReplayContract);
+    });
+
+    it('upserts registration sessions on retry', async () => {
+      await withStorage(factory, assertRegistrationSessionUpsertContract);
     });
   });
 }
@@ -131,6 +140,47 @@ async function assertMissingDeploymentUpdateContract(storage: LTIStorage): Promi
 
 async function assertMissingClientDeleteContract(storage: LTIStorage): Promise<void> {
   await expect(storage.deleteClient('missing-client')).resolves.toBeUndefined();
+}
+
+async function assertRegistrationSessionUpsertContract(
+  storage: LTIStorage,
+): Promise<void> {
+  const session: LTIDynamicRegistrationSession = {
+    registrationToken: 'registration-token',
+    expiresAt: Date.now() + 60_000,
+    openIdConfiguration: {
+      issuer: testClient.iss,
+      authorization_endpoint: testClient.authUrl,
+      registration_endpoint: 'https://platform.example.com/register',
+      jwks_uri: testClient.jwksUrl,
+      token_endpoint: testClient.tokenUrl,
+      token_endpoint_auth_methods_supported: ['private_key_jwt'],
+      token_endpoint_auth_signing_alg_values_supported: ['RS256'],
+      scopes_supported: [],
+      response_types_supported: ['id_token'],
+      id_token_signing_alg_values_supported: ['RS256'],
+      claims_supported: ['sub'],
+      subject_types_supported: ['public'],
+      [LTI_CLAIM_PLATFORM_CONFIGURATION]: {
+        product_family_code: 'test',
+        version: '1',
+        messages_supported: [],
+      },
+    },
+  };
+
+  await storage.setRegistrationSession('registration-session-id', session);
+  await storage.setRegistrationSession('registration-session-id', {
+    ...session,
+    registrationToken: 'updated-token',
+  });
+
+  await expect(
+    storage.getRegistrationSession('registration-session-id'),
+  ).resolves.toMatchObject({
+    registrationToken: 'updated-token',
+    expiresAt: session.expiresAt,
+  });
 }
 
 async function withStorage(

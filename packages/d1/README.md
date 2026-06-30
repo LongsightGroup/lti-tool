@@ -13,6 +13,10 @@ npm install @longsightgroup/lti-tool drizzle-orm
 Apply the Drizzle migrations in `drizzle/` to your D1 database, then pass the
 binding to `D1Storage`.
 
+The Drizzle schema files are the source of truth for contributors. After schema
+changes, run `npm run db:generate:d1` and commit the generated migration SQL and
+metadata. Run `npm run db:check:d1` before finishing migration changes.
+
 ```typescript
 import { LTITool } from '@longsightgroup/lti-tool';
 import { D1Storage } from '@longsightgroup/lti-tool/storage/d1';

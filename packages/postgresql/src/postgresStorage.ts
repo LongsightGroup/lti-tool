@@ -1,15 +1,12 @@
 import { isServerlessEnvironment } from '@longsightgroup/lti-tool';
-import { lt } from 'drizzle-orm';
-import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import type { Logger } from 'pino';
 import postgres from 'postgres';
 
 import {
   RelationalStorage,
-  DEFAULT_NONCE_TTL_SECONDS,
-  type RelationalCleanupResult,
+  createPostgresDialect,
   type RelationalDatabase,
-  type RelationalStorageDialect,
   resolveStorageLogger,
 } from '#storage/relational-storage';
 
@@ -35,9 +32,14 @@ export class PostgresStorage extends RelationalStorage {
 
     super({
       logger,
+      // SAFETY: PostgreSQL Drizzle exposes the select/insert/update/delete query surface used by RelationalStorage.
       db: db as unknown as RelationalDatabase,
       schema,
-      dialect: createPostgresDialect(db),
+      dialect: createPostgresDialect({
+        db,
+        schema,
+        sessionTtlSeconds: SESSION_TTL,
+      }),
     });
 
     this.adapterLogger = logger;
@@ -54,63 +56,6 @@ export class PostgresStorage extends RelationalStorage {
     await this.sql.end();
     this.adapterLogger.debug('PostgreSQL connection pool closed');
   }
-}
-
-function createPostgresDialect(
-  db: PostgresJsDatabase<typeof schema>,
-): RelationalStorageDialect {
-  return {
-    name: 'PostgreSQL',
-    sessionTtlSeconds: SESSION_TTL,
-    nonceTtlSeconds: DEFAULT_NONCE_TTL_SECONDS,
-    claimNonce: (nonce, expiresAt) => claimPostgresNonce(db, nonce, expiresAt),
-    setRegistrationSession: async (sessionId, session) => {
-      await db.insert(schema.registrationSessionsTable).values({
-        id: sessionId,
-        data: session,
-        expiresAt: session.expiresAt,
-      });
-    },
-    cleanup: (now) => cleanupPostgres(db, now),
-  };
-}
-
-async function claimPostgresNonce(
-  db: PostgresJsDatabase<typeof schema>,
-  nonce: string,
-  expiresAt: number,
-): Promise<boolean> {
-  const rows = await db
-    .insert(schema.noncesTable)
-    .values({ nonce, expiresAt })
-    .onConflictDoNothing()
-    .returning({ nonce: schema.noncesTable.nonce });
-
-  return rows.length === 1;
-}
-
-async function cleanupPostgres(
-  db: PostgresJsDatabase<typeof schema>,
-  now: number,
-): Promise<RelationalCleanupResult> {
-  const noncesResult = await db
-    .delete(schema.noncesTable)
-    .where(lt(schema.noncesTable.expiresAt, now))
-    .returning({ nonce: schema.noncesTable.nonce });
-  const sessionsResult = await db
-    .delete(schema.sessionsTable)
-    .where(lt(schema.sessionsTable.expiresAt, now))
-    .returning({ id: schema.sessionsTable.id });
-  const registrationSessionsResult = await db
-    .delete(schema.registrationSessionsTable)
-    .where(lt(schema.registrationSessionsTable.expiresAt, now))
-    .returning({ id: schema.registrationSessionsTable.id });
-
-  return {
-    noncesDeleted: noncesResult.length,
-    sessionsDeleted: sessionsResult.length,
-    registrationSessionsDeleted: registrationSessionsResult.length,
-  };
 }
 
 function resolveConnectionOptions(

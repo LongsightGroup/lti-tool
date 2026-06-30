@@ -174,35 +174,19 @@ describe('D1Storage with Miniflare D1', () => {
   });
 
   describe('launch config', () => {
-    it('falls back to default deployment when the requested platform deployment is missing', async () => {
+    it('returns undefined when requested platform deployment is missing', async () => {
       const clientInternalId = await harness.storage<string>('addClient', testClient);
       await harness.storage('addDeployment', clientInternalId, {
         deploymentId: 'default',
       });
 
       await expect(
-        harness.storage(
-          'getLaunchConfig',
+        harness.storageAdapter.getLaunchConfig(
           testClient.iss,
           testClient.clientId,
           'missing-deployment',
         ),
-      ).resolves.toMatchObject({
-        deploymentId: 'default',
-      });
-    });
-
-    it('returns undefined when neither requested nor default deployment exists', async () => {
-      await harness.storage('addClient', testClient);
-
-      await expect(
-        harness.storage(
-          'getLaunchConfig',
-          testClient.iss,
-          testClient.clientId,
-          'missing-deployment',
-        ),
-      ).resolves.toBeNull();
+      ).resolves.toBeUndefined();
     });
   });
 

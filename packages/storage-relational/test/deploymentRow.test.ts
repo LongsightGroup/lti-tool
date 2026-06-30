@@ -9,7 +9,6 @@ import {
 import {
   parseRegistrationSessionDataRow,
   parseSessionDataRow,
-  projectClient,
   toSessionDataRow,
 } from '../src/storageRows.js';
 
@@ -68,28 +67,6 @@ describe('deployment row mapping', () => {
 });
 
 describe('shared storage row mapping', () => {
-  it('projects client rows without deployments', () => {
-    expect(
-      projectClient({
-        id: 'client-id',
-        name: 'Platform',
-        iss: 'https://platform.example.com',
-        clientId: 'oauth-client-id',
-        authUrl: 'https://platform.example.com/auth',
-        tokenUrl: 'https://platform.example.com/token',
-        jwksUrl: 'https://platform.example.com/jwks',
-      }),
-    ).toEqual({
-      id: 'client-id',
-      name: 'Platform',
-      iss: 'https://platform.example.com',
-      clientId: 'oauth-client-id',
-      authUrl: 'https://platform.example.com/auth',
-      tokenUrl: 'https://platform.example.com/token',
-      jwksUrl: 'https://platform.example.com/jwks',
-    });
-  });
-
   it('splits and reconstructs persisted session data', () => {
     const session = {
       id: 'session-id',
@@ -116,19 +93,36 @@ describe('shared storage row mapping', () => {
   });
 
   it('rejects invalid persisted session data', () => {
+    const warnings: unknown[] = [];
+    const logger = {
+      warn: (payload: unknown) => {
+        warnings.push(payload);
+      },
+    };
+
     expect(
-      parseSessionDataRow({
-        id: 'session-id',
-        data: { user: { id: 'missing-required-fields' } } as never,
-      }),
+      parseSessionDataRow(
+        {
+          id: 'session-id',
+          data: { user: { id: 'missing-required-fields' } } as never,
+        },
+        logger,
+      ),
     ).toBeUndefined();
+    expect(warnings).toHaveLength(1);
   });
 
   it('rejects invalid persisted registration session data', () => {
+    const warnings: unknown[] = [];
+    const logger = {
+      warn: (payload: unknown) => {
+        warnings.push(payload);
+      },
+    };
+
     expect(
-      parseRegistrationSessionDataRow({
-        data: { state: 'expired' } as never,
-      }),
+      parseRegistrationSessionDataRow({ data: { state: 'expired' } as never }, logger),
     ).toBeUndefined();
+    expect(warnings).toHaveLength(1);
   });
 });

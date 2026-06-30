@@ -5,8 +5,8 @@ import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
 import {
   RelationalStorage,
   DEFAULT_NONCE_TTL_SECONDS,
-  type RelationalCleanupResult,
   type RelationalDatabase,
+  type RelationalCleanupResult,
   type RelationalStorageDialect,
   resolveStorageLogger,
 } from '#storage/relational-storage';
@@ -25,6 +25,7 @@ export class D1Storage extends RelationalStorage {
 
     super({
       logger,
+      // SAFETY: D1 Drizzle exposes the select/insert/update/delete query surface used by RelationalStorage.
       db: db as unknown as RelationalDatabase,
       schema,
       dialect: createD1Dialect(db),

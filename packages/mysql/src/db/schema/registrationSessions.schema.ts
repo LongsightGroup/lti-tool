@@ -5,8 +5,8 @@ export const registrationSessionsTable = mysqlTable(
   'registrationSessions',
   {
     id: varchar({ length: 36 }).primaryKey(),
-    data: json().$type<Omit<LTIDynamicRegistrationSession, 'sessionId'>>().notNull(),
+    data: json().$type<LTIDynamicRegistrationSession>().notNull(),
     expiresAt: bigint({ mode: 'number' }).notNull(),
   },
-  (table) => [index('expires_at_idx').on(table.expiresAt)],
+  (table) => [index('reg_sessions_expires_at_idx').on(table.expiresAt)],
 );

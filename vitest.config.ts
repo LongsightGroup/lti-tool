@@ -18,13 +18,18 @@ const packageJson = JSON.parse(
 ) as PackageJson;
 
 function sourceAliases(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(packageJson.imports ?? {}).flatMap(([specifier, target]) => {
-      if (typeof target === 'string' || target.source === undefined) return [];
+  return {
+    '@longsightgroup/lti-tool': fileURLToPath(
+      new URL('./packages/core/src/index.ts', import.meta.url),
+    ),
+    ...Object.fromEntries(
+      Object.entries(packageJson.imports ?? {}).flatMap(([specifier, target]) => {
+        if (typeof target === 'string' || target.source === undefined) return [];
 
-      return [[specifier, fileURLToPath(new URL(target.source, import.meta.url))]];
-    }),
-  );
+        return [[specifier, fileURLToPath(new URL(target.source, import.meta.url))]];
+      }),
+    ),
+  };
 }
 
 export default defineConfig({

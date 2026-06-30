@@ -1,15 +1,12 @@
 import { isServerlessEnvironment } from '@longsightgroup/lti-tool';
-import { lt } from 'drizzle-orm';
-import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2';
+import { drizzle } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
 import type { Logger } from 'pino';
 
 import {
   RelationalStorage,
-  DEFAULT_NONCE_TTL_SECONDS,
-  type RelationalCleanupResult,
+  createMySqlDialect,
   type RelationalDatabase,
-  type RelationalStorageDialect,
   resolveStorageLogger,
 } from '#storage/relational-storage';
 
@@ -36,9 +33,14 @@ export class MySqlStorage extends RelationalStorage {
 
     super({
       logger,
+      // SAFETY: MySQL Drizzle exposes the select/insert/update/delete query surface used by RelationalStorage.
       db: db as unknown as RelationalDatabase,
       schema,
-      dialect: createMySqlDialect(db),
+      dialect: createMySqlDialect({
+        db,
+        schema,
+        sessionTtlSeconds: SESSION_TTL,
+      }),
     });
 
     this.adapterLogger = logger;
@@ -57,57 +59,6 @@ export class MySqlStorage extends RelationalStorage {
   }
 }
 
-function createMySqlDialect(db: MySql2Database<typeof schema>): RelationalStorageDialect {
-  return {
-    name: 'MySQL',
-    sessionTtlSeconds: SESSION_TTL,
-    nonceTtlSeconds: DEFAULT_NONCE_TTL_SECONDS,
-    claimNonce: (nonce, expiresAt) => claimMySqlNonce(db, nonce, expiresAt),
-    setRegistrationSession: async (sessionId, session) => {
-      await db.insert(schema.registrationSessionsTable).values({
-        id: sessionId,
-        data: session,
-        expiresAt: session.expiresAt,
-      });
-    },
-    cleanup: (now) => cleanupMySql(db, now),
-  };
-}
-
-async function claimMySqlNonce(
-  db: MySql2Database<typeof schema>,
-  nonce: string,
-  expiresAt: number,
-): Promise<boolean> {
-  const result = await db
-    .insert(schema.noncesTable)
-    .ignore()
-    .values({ nonce, expiresAt });
-
-  return getMySqlAffectedRows(result) === 1;
-}
-
-async function cleanupMySql(
-  db: MySql2Database<typeof schema>,
-  now: number,
-): Promise<RelationalCleanupResult> {
-  const noncesResult = await db
-    .delete(schema.noncesTable)
-    .where(lt(schema.noncesTable.expiresAt, now));
-  const sessionsResult = await db
-    .delete(schema.sessionsTable)
-    .where(lt(schema.sessionsTable.expiresAt, now));
-  const registrationSessionsResult = await db
-    .delete(schema.registrationSessionsTable)
-    .where(lt(schema.registrationSessionsTable.expiresAt, now));
-
-  return {
-    noncesDeleted: getMySqlAffectedRows(noncesResult),
-    sessionsDeleted: getMySqlAffectedRows(sessionsResult),
-    registrationSessionsDeleted: getMySqlAffectedRows(registrationSessionsResult),
-  };
-}
-
 function resolveConnectionOptions(
   config: MySqlStorageConfig,
   logger: Logger,
@@ -123,7 +74,7 @@ function resolveConnectionOptions(
   if (isServerless && connectionLimit > 5) {
     logger.warn(
       { connectionLimit, environment: 'serverless' },
-      'High connectionLimit detected in serverless environment. Consider using 1 connection per container to avoid wasting resources.',
+      'High connection limit detected in serverless environment. Consider using 1 connection per container to avoid wasting resources.',
     );
   }
 
@@ -132,15 +83,4 @@ function resolveConnectionOptions(
     isServerless,
     queueLimit: config.poolOptions?.queueLimit ?? 0,
   };
-}
-
-function getMySqlAffectedRows(result: unknown): number {
-  if (!Array.isArray(result)) return 0;
-
-  const [summary] = result;
-  if (typeof summary !== 'object' || summary === null || !('affectedRows' in summary)) {
-    return 0;
-  }
-
-  return Number(summary.affectedRows ?? 0);
 }

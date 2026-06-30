@@ -33,7 +33,7 @@ const ltiTool = new LTITool({
 - **Production Ready** - Handles high-scale LTI deployments
 - **Built-in Caching** - LRU cache for frequently accessed data
 - **Type-safe** - Uses Drizzle ORM for database operations
-- **Transaction Support** - Handles data integrity on deletes
+- **Cascade Deletes** - Database constraints remove deployments with their client
 - **Tuned Connection Pool Defaults** - Connection pool defaults based on hosting environment
 
 ## API Reference
@@ -42,22 +42,20 @@ const ltiTool = new LTITool({
 
 ## Configuration
 
-### Using Drizzle Kit Push (Recommended for Development)
+### Using Migrations
 
 ```bash
 # Set your DATABASE_URL
 export DATABASE_URL="postgresql://user:password@host:port/database"
 
-# Push schema to database
-npx drizzle-kit push
+# Apply the generated migrations
+npx drizzle-kit migrate --config packages/postgresql/drizzle.config.ts
 ```
 
-### Using Migrations (Recommended for Production)
-
-```bash
-# Apply migrations
-npx drizzle-kit migrate
-```
+The Drizzle schema files are the source of truth for contributors. After schema
+changes, run `npm run db:generate:postgresql` and commit the generated migration
+SQL and metadata. Run `npm run db:check:postgresql` before finishing migration
+changes.
 
 ### PostgresStorageConfig
 
@@ -86,7 +84,8 @@ The adapter uses these tables:
 - **registration_sessions**: Dynamic registration sessions
   Indexed: `expiresAt`
 
-All tables use native PostgreSQL UUIDs for primary keys and include indexes for performance.
+Primary keys are app-generated UUID strings. Tables include indexes for
+performance.
 
 ### clients
 
@@ -122,11 +121,11 @@ All tables use native PostgreSQL UUIDs for primary keys and include indexes for 
 
 ### sessions
 
-| Column      | Type                     | Constraints           | Description                  |
-| ----------- | ------------------------ | --------------------- | ---------------------------- |
-| `id`        | UUID                     | PRIMARY KEY, NOT NULL | Session UUID                 |
-| `data`      | JSONB                    | NOT NULL              | Complete LTI session data    |
-| `expiresAt` | TIMESTAMP WITH TIME ZONE | NOT NULL              | Session expiration timestamp |
+| Column      | Type   | Constraints           | Description                           |
+| ----------- | ------ | --------------------- | ------------------------------------- |
+| `id`        | UUID   | PRIMARY KEY, NOT NULL | Session UUID                          |
+| `data`      | JSONB  | NOT NULL              | Complete LTI session data             |
+| `expiresAt` | BIGINT | NOT NULL              | Session expiration epoch milliseconds |
 
 **Indexes:**
 
@@ -134,18 +133,18 @@ All tables use native PostgreSQL UUIDs for primary keys and include indexes for 
 
 ### nonces
 
-| Column      | Type                     | Constraints           | Description                |
-| ----------- | ------------------------ | --------------------- | -------------------------- |
-| `nonce`     | VARCHAR(255)             | PRIMARY KEY, NOT NULL | One-time use nonce value   |
-| `expiresAt` | TIMESTAMP WITH TIME ZONE | NOT NULL              | Nonce expiration timestamp |
+| Column      | Type         | Constraints           | Description                         |
+| ----------- | ------------ | --------------------- | ----------------------------------- |
+| `nonce`     | VARCHAR(255) | PRIMARY KEY, NOT NULL | One-time use nonce value            |
+| `expiresAt` | BIGINT       | NOT NULL              | Nonce expiration epoch milliseconds |
 
 ### registration_sessions
 
-| Column      | Type                     | Constraints           | Description                       |
-| ----------- | ------------------------ | --------------------- | --------------------------------- |
-| `id`        | UUID                     | PRIMARY KEY, NOT NULL | Registration session UUID         |
-| `data`      | JSONB                    | NOT NULL              | Dynamic registration session data |
-| `expiresAt` | TIMESTAMP WITH TIME ZONE | NOT NULL              | Session expiration timestamp      |
+| Column      | Type   | Constraints           | Description                           |
+| ----------- | ------ | --------------------- | ------------------------------------- |
+| `id`        | UUID   | PRIMARY KEY, NOT NULL | Registration session UUID             |
+| `data`      | JSONB  | NOT NULL              | Dynamic registration session data     |
+| `expiresAt` | BIGINT | NOT NULL              | Session expiration epoch milliseconds |
 
 **Indexes:**
 
@@ -272,8 +271,8 @@ podman run -d \
 ### Run Tests
 
 ```bash
-DATABASE_URL="postgresql://lti_user:lti_password@127.0.0.1:5432/lti_test" npx drizzle-kit migrate
-DATABASE_URL="postgresql://lti_user:lti_password@127.0.0.1:5432/lti_test" npm test
+DATABASE_URL="postgresql://lti_user:lti_password@127.0.0.1:5432/lti_test" npm run db:migrate:postgresql
+DATABASE_URL="postgresql://lti_user:lti_password@127.0.0.1:5432/lti_test" npm run test:integration:postgresql
 ```
 
 **Important:** Always close the pool after tests:

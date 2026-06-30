@@ -12,14 +12,19 @@ import {
   type LtiServiceKind,
   type LtiServiceResult,
 } from './errors/ltiServiceError.js';
+import type {
+  LTIClient,
+  LTIDeployment,
+  LTIDynamicRegistrationSession,
+} from './interfaces/index.js';
 import type { JWKS } from './interfaces/jwks.js';
-import type { LTIClient } from './interfaces/ltiClient.js';
 import type { LTIConfig } from './interfaces/ltiConfig.js';
-import type { LTIDeployment } from './interfaces/ltiDeployment.js';
-import type { LTIDynamicRegistrationSession } from './interfaces/ltiDynamicRegistrationSession.js';
-import type { LTILaunchConfig } from './interfaces/ltiLaunchConfig.js';
 import type { LTISession } from './interfaces/ltiSession.js';
-import type { LTIStorage } from './interfaces/ltiStorage.js';
+import {
+  type LtiLaunchRegistrationInput,
+  type LtiLaunchRegistrationUpsertResult,
+  upsertLaunchRegistration,
+} from './launchRegistration.js';
 import { AddClientSchema, UpdateClientSchema } from './schemas/client.schema.js';
 import {
   type DynamicRegistrationForm,
@@ -70,139 +75,7 @@ import {
 import { buildLtiLoginAuthUrl } from './utils/ltiLogin.js';
 import { normalizeLtiNrpsMembersResponse } from './utils/nrps.js';
 
-export interface LtiLaunchRegistrationInput {
-  /** Platform issuer URL that uniquely identifies the LMS */
-  iss: string;
-  /** OAuth2 client identifier assigned by the platform */
-  clientId: string;
-  /** LMS-provided deployment identifier used in LTI launch requests */
-  deploymentId: string;
-  /** Platform's OIDC authentication endpoint URL */
-  authUrl: string;
-  /** Platform's OAuth2 token endpoint URL for service access */
-  tokenUrl: string;
-  /** Platform's JSON Web Key Set endpoint URL for JWT verification */
-  jwksUrl: string;
-  /** Optional human-readable platform name. Defaults to the issuer for new clients. */
-  name?: string;
-  /** Optional human-readable deployment name when creating or updating the deployment. */
-  deploymentName?: string;
-  /** Optional deployment description when creating or updating the deployment. */
-  deploymentDescription?: string;
-}
-
-export interface LtiLaunchRegistrationUpsertResult {
-  client: LTIClient;
-  deployment: LTIDeployment;
-  launchConfig: LTILaunchConfig;
-  createdClient: boolean;
-  createdDeployment: boolean;
-}
-
-type StoredClient = Omit<LTIClient, 'deployments'>;
-
-const launchRegistrationClientInput = (
-  registration: LtiLaunchRegistrationInput,
-  existingClient?: StoredClient,
-): Omit<LTIClient, 'id' | 'deployments'> => {
-  return AddClientSchema.parse({
-    name: registration.name ?? existingClient?.name ?? registration.iss,
-    iss: registration.iss,
-    clientId: registration.clientId,
-    authUrl: registration.authUrl,
-    tokenUrl: registration.tokenUrl,
-    jwksUrl: registration.jwksUrl,
-  });
-};
-
-const findLaunchRegistrationClient = async (
-  storage: LTIStorage,
-  registration: LtiLaunchRegistrationInput,
-): Promise<StoredClient | undefined> => {
-  const clients = await storage.listClients();
-  return clients.find(
-    (client) =>
-      client.iss === registration.iss && client.clientId === registration.clientId,
-  );
-};
-
-const upsertLaunchRegistrationClient = async (
-  storage: LTIStorage,
-  registration: LtiLaunchRegistrationInput,
-): Promise<{ client: StoredClient; createdClient: boolean }> => {
-  const existingClient = await findLaunchRegistrationClient(storage, registration);
-  const clientInput = launchRegistrationClientInput(registration, existingClient);
-
-  if (existingClient === undefined) {
-    const clientId = await storage.addClient(clientInput);
-    return { client: { id: clientId, ...clientInput }, createdClient: true };
-  }
-
-  await storage.updateClient(existingClient.id, clientInput);
-  return { client: { id: existingClient.id, ...clientInput }, createdClient: false };
-};
-
-const launchRegistrationDeploymentInput = (
-  registration: LtiLaunchRegistrationInput,
-): Omit<LTIDeployment, 'id'> => ({
-  deploymentId: registration.deploymentId,
-  ...(registration.deploymentName === undefined
-    ? {}
-    : { name: registration.deploymentName }),
-  ...(registration.deploymentDescription === undefined
-    ? {}
-    : { description: registration.deploymentDescription }),
-});
-
-const upsertLaunchRegistrationDeployment = async (
-  storage: LTIStorage,
-  clientId: string,
-  registration: LtiLaunchRegistrationInput,
-): Promise<{
-  deployment: LTIDeployment;
-  createdDeployment: boolean;
-}> => {
-  const existingDeployment = await storage.getDeploymentByPlatformId(
-    clientId,
-    registration.deploymentId,
-  );
-  const deploymentInput = launchRegistrationDeploymentInput(registration);
-
-  if (existingDeployment === undefined) {
-    return {
-      deployment: {
-        id: await storage.addDeployment(clientId, deploymentInput),
-        ...deploymentInput,
-      },
-      createdDeployment: true,
-    };
-  }
-
-  const deployment = { ...existingDeployment, ...deploymentInput };
-
-  if (
-    registration.deploymentName !== undefined ||
-    registration.deploymentDescription !== undefined
-  ) {
-    await storage.updateDeploymentById(clientId, existingDeployment.id, deploymentInput);
-  }
-
-  return {
-    deployment,
-    createdDeployment: false,
-  };
-};
-
-const launchConfigFromRegistration = (
-  registration: LtiLaunchRegistrationInput,
-): LTILaunchConfig => ({
-  iss: registration.iss,
-  clientId: registration.clientId,
-  deploymentId: registration.deploymentId,
-  authUrl: registration.authUrl,
-  tokenUrl: registration.tokenUrl,
-  jwksUrl: registration.jwksUrl,
-});
+export type { LtiLaunchRegistrationInput, LtiLaunchRegistrationUpsertResult };
 
 const ltiServiceFailure = <T>(
   error: unknown,
@@ -1163,12 +1036,10 @@ export class LTITool {
     }
   }
 
-  // Client management
-
   /**
    * Retrieves all configured LTI client platforms.
    *
-   * @returns Array of client configurations (without deployment details)
+   * @returns Client configurations without deployment details.
    */
   async listClients(): Promise<Omit<LTIClient, 'deployments'>[]> {
     try {
@@ -1181,8 +1052,8 @@ export class LTITool {
   /**
    * Updates an existing client configuration.
    *
-   * @param clientId - Unique client identifier
-   * @param client - Partial client object with fields to update
+   * @param clientId - Stored client identifier.
+   * @param client - Partial client fields to update.
    */
   async updateClient(
     clientId: string,
@@ -1199,10 +1070,10 @@ export class LTITool {
   }
 
   /**
-   * Retrieves a specific client configuration by ID.
+   * Retrieves a client configuration by stored client identifier.
    *
-   * @param clientId - Unique client identifier
-   * @returns Client configuration if found, undefined otherwise
+   * @param clientId - Stored client identifier.
+   * @returns Client configuration with deployments, when found.
    */
   async getClientById(clientId: string): Promise<LTIClient | undefined> {
     try {
@@ -1215,10 +1086,10 @@ export class LTITool {
   }
 
   /**
-   * Adds a new LTI client platform configuration.
+   * Adds an LTI client platform configuration.
    *
-   * @param client - Client configuration (ID will be auto-generated)
-   * @returns The generated client ID
+   * @param client - Client configuration. The storage adapter generates the ID.
+   * @returns Generated stored client identifier.
    */
   async addClient(client: Omit<LTIClient, 'id' | 'deployments'>): Promise<string> {
     try {
@@ -1234,37 +1105,14 @@ export class LTITool {
   /**
    * Adds or updates launch registration records using platform identifiers.
    *
-   * This helper matches clients by issuer and OAuth client ID, matches deployments by
-   * the LMS-provided deployment ID under the stored client, and saves the launch
-   * configuration used by OIDC login and launch verification.
-   *
-   * @param registration - Platform identifiers and launch endpoints
-   * @returns Stored client, deployment, launch config, and created flags
+   * @param registration - Platform identifiers and launch endpoints.
+   * @returns Stored client, deployment, launch config, and created flags.
    */
   async upsertLaunchRegistration(
     registration: LtiLaunchRegistrationInput,
   ): Promise<LtiLaunchRegistrationUpsertResult> {
     try {
-      const { client, createdClient } = await upsertLaunchRegistrationClient(
-        this.config.storage,
-        registration,
-      );
-      const { deployment, createdDeployment } = await upsertLaunchRegistrationDeployment(
-        this.config.storage,
-        client.id,
-        registration,
-      );
-      const deployments = await this.config.storage.listDeployments(client.id);
-      const launchConfig = launchConfigFromRegistration(registration);
-      await this.config.storage.saveLaunchConfig(launchConfig);
-
-      return {
-        client: { ...client, deployments },
-        deployment,
-        launchConfig,
-        createdClient,
-        createdDeployment,
-      };
+      return await upsertLaunchRegistration(this.config.storage, registration);
     } catch (error) {
       throw new Error(
         `[Launch Registration] Upsert failed for issuer '${registration.iss}', client '${registration.clientId}', deployment '${registration.deploymentId}': ${formatError(error)}`,
@@ -1273,9 +1121,9 @@ export class LTITool {
   }
 
   /**
-   * Removes a client configuration and all its deployments.
+   * Deletes a client platform configuration.
    *
-   * @param clientId - Unique client identifier
+   * @param clientId - Stored client identifier.
    */
   async deleteClient(clientId: string): Promise<void> {
     try {
@@ -1287,13 +1135,11 @@ export class LTITool {
     }
   }
 
-  // Deployment management
-
   /**
-   * Lists all deployments for a specific client platform.
+   * Lists deployments for a stored client.
    *
-   * @param clientId - Client identifier
-   * @returns Array of deployment configurations for the client
+   * @param clientId - Stored client identifier.
+   * @returns Deployment configurations for the client.
    */
   async listDeployments(clientId: string): Promise<LTIDeployment[]> {
     try {
@@ -1306,11 +1152,11 @@ export class LTITool {
   }
 
   /**
-   * Retrieves a specific deployment configuration.
+   * Retrieves a deployment by the platform-provided deployment ID.
    *
-   * @param clientId - Client identifier
-   * @param deploymentId - Deployment identifier
-   * @returns Deployment configuration if found, undefined otherwise
+   * @param clientId - Stored client identifier.
+   * @param deploymentId - Platform-provided deployment identifier.
+   * @returns Deployment configuration, when found.
    */
   async getDeploymentByPlatformId(
     clientId: string,
@@ -1326,11 +1172,11 @@ export class LTITool {
   }
 
   /**
-   * Adds a new deployment to an existing client.
+   * Adds a deployment under a stored client.
    *
-   * @param clientId - Client identifier
-   * @param deployment - Deployment configuration to add
-   * @returns The generated deployment ID
+   * @param clientId - Stored client identifier.
+   * @param deployment - Deployment configuration. The storage adapter generates the ID.
+   * @returns Generated stored deployment identifier.
    */
   async addDeployment(
     clientId: string,
@@ -1346,11 +1192,11 @@ export class LTITool {
   }
 
   /**
-   * Updates an existing deployment configuration.
+   * Updates a deployment by stored deployment identifier.
    *
-   * @param clientId - Client identifier
-   * @param deploymentId - Deployment identifier
-   * @param deployment - Partial deployment object with fields to update
+   * @param clientId - Stored client identifier.
+   * @param deploymentId - Stored deployment identifier.
+   * @param deployment - Partial deployment fields to update.
    */
   async updateDeploymentById(
     clientId: string,
@@ -1371,10 +1217,10 @@ export class LTITool {
   }
 
   /**
-   * Removes a deployment from a client.
+   * Deletes a deployment by stored deployment identifier.
    *
-   * @param clientId - Client identifier
-   * @param deploymentId - Deployment identifier to remove
+   * @param clientId - Stored client identifier.
+   * @param deploymentId - Stored deployment identifier.
    */
   async deleteDeploymentById(clientId: string, deploymentId: string): Promise<void> {
     try {
@@ -1386,14 +1232,11 @@ export class LTITool {
     }
   }
 
-  // Dynamic Registration Session Management
-
   /**
-   * Stores a temporary registration session during LTI 1.3 dynamic registration flow.
-   * Sessions automatically expire after the configured TTL period.
+   * Stores a dynamic registration session.
    *
-   * @param sessionId - Unique session identifier (typically a UUID)
-   * @param session - Registration session data including platform config and tokens
+   * @param sessionId - Registration session identifier.
+   * @param session - Registration session payload.
    */
   async setRegistrationSession(
     sessionId: string,
@@ -1409,11 +1252,10 @@ export class LTITool {
   }
 
   /**
-   * Retrieves a registration session by its ID for validation during completion.
-   * Returns undefined if the session is not found or has expired.
+   * Retrieves a dynamic registration session.
    *
-   * @param sessionId - Unique session identifier
-   * @returns Registration session if found and not expired, undefined otherwise
+   * @param sessionId - Registration session identifier.
+   * @returns Registration session payload, when found and unexpired.
    */
   async getRegistrationSession(
     sessionId: string,
@@ -1428,10 +1270,9 @@ export class LTITool {
   }
 
   /**
-   * Removes a registration session from storage after completion or expiration.
-   * Used for cleanup to prevent session accumulation.
+   * Deletes a dynamic registration session.
    *
-   * @param sessionId - Unique session identifier to delete
+   * @param sessionId - Registration session identifier.
    */
   async deleteRegistrationSession(sessionId: string): Promise<void> {
     try {

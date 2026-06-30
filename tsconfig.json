@@ -12,5 +12,9 @@
     "customConditions": ["source"],
     "lib": ["ES2024", "WebWorker", "DOM", "DOM.Iterable"]
   },
-  "include": ["packages/*/src/**/*", "packages/*/test/**/*.ts"]
+  "include": [
+    "packages/*/src/**/*",
+    "packages/*/test/**/*.ts",
+    "packages/storage-relational/test/**/*.ts"
+  ]
 }

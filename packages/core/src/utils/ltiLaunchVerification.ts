@@ -11,6 +11,7 @@ import {
 } from '../schemas/index.js';
 
 import { formatError } from './errorFormatting.js';
+import { resolveLaunchConfig } from './launchConfigValidation.js';
 
 type RemoteJwks = ReturnType<typeof createRemoteJWKSet>;
 export type LtiLaunchJwksCache = Map<string, RemoteJwks>;
@@ -321,7 +322,7 @@ async function readStoredLaunchConfig(
 ): Promise<LTILaunchConfig> {
   let launchConfig: LTILaunchConfig | undefined;
   try {
-    launchConfig = await storage.getLaunchConfig(issuer, clientId, deploymentId);
+    launchConfig = await resolveLaunchConfig(storage, issuer, clientId, deploymentId);
   } catch (error) {
     throw new LtiLaunchVerificationError(
       'launch_config_lookup_failed',

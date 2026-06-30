@@ -33,7 +33,7 @@ const ltiTool = new LTITool({
 - **Production Ready** - Handles high-scale LTI deployments
 - **Built-in Caching** - LRU cache for frequently accessed data
 - **Type-safe** - Uses Drizzle ORM for database operations
-- **Transaction Support** - Handles data integrity on deletes
+- **Cascade Deletes** - Database constraints remove deployments with their client
 - **Tuned Connection Pool Defaults** - Connection pool defaults based on hosting environment
 
 ## API Reference
@@ -42,22 +42,19 @@ const ltiTool = new LTITool({
 
 ## Configuration
 
-### Using Drizzle Kit Push (Recommended for Development)
+### Using Migrations
 
 ```bash
 # Set your DATABASE_URL
 export DATABASE_URL="mysql://user:password@host:port/database"
 
-# Push schema to database
-npx drizzle-kit push
+# Apply the generated migrations
+npx drizzle-kit migrate --config packages/mysql/drizzle.config.ts
 ```
 
-### Using Migrations (Recommended for Production)
-
-```bash
-# Apply migrations
-npx drizzle-kit migrate
-```
+The Drizzle schema files are the source of truth for contributors. After schema
+changes, run `npm run db:generate:mysql` and commit the generated migration SQL
+and metadata. Run `npm run db:check:mysql` before finishing migration changes.
 
 ### MySqlStorageConfig
 
@@ -86,7 +83,8 @@ The adapter uses these tables:
 - **registrationSessions**: Dynamic registration sessions
   Indexed: `expiresAt`
 
-All tables use UUIDs for primary keys and include indexes for performance.
+Primary keys are app-generated UUID strings. Tables include indexes for
+performance.
 
 ### clients
 
@@ -122,11 +120,11 @@ All tables use UUIDs for primary keys and include indexes for performance.
 
 ### sessions
 
-| Column      | Type        | Constraints           | Description                  |
-| ----------- | ----------- | --------------------- | ---------------------------- |
-| `id`        | VARCHAR(36) | PRIMARY KEY, NOT NULL | Session UUID                 |
-| `data`      | JSON        | NOT NULL              | Complete LTI session data    |
-| `expiresAt` | DATETIME    | NOT NULL              | Session expiration timestamp |
+| Column      | Type        | Constraints           | Description                           |
+| ----------- | ----------- | --------------------- | ------------------------------------- |
+| `id`        | VARCHAR(36) | PRIMARY KEY, NOT NULL | Session UUID                          |
+| `data`      | JSON        | NOT NULL              | Complete LTI session data             |
+| `expiresAt` | BIGINT      | NOT NULL              | Session expiration epoch milliseconds |
 
 **Indexes:**
 
@@ -134,22 +132,22 @@ All tables use UUIDs for primary keys and include indexes for performance.
 
 ### nonces
 
-| Column      | Type         | Constraints           | Description                |
-| ----------- | ------------ | --------------------- | -------------------------- |
-| `nonce`     | VARCHAR(255) | PRIMARY KEY, NOT NULL | One-time use nonce value   |
-| `expiresAt` | DATETIME     | NOT NULL              | Nonce expiration timestamp |
+| Column      | Type         | Constraints           | Description                         |
+| ----------- | ------------ | --------------------- | ----------------------------------- |
+| `nonce`     | VARCHAR(255) | PRIMARY KEY, NOT NULL | One-time use nonce value            |
+| `expiresAt` | BIGINT       | NOT NULL              | Nonce expiration epoch milliseconds |
 
 ### registrationSessions
 
-| Column      | Type        | Constraints           | Description                       |
-| ----------- | ----------- | --------------------- | --------------------------------- |
-| `id`        | VARCHAR(36) | PRIMARY KEY, NOT NULL | Registration session UUID         |
-| `data`      | JSON        | NOT NULL              | Dynamic registration session data |
-| `expiresAt` | DATETIME    | NOT NULL              | Session expiration timestamp      |
+| Column      | Type        | Constraints           | Description                           |
+| ----------- | ----------- | --------------------- | ------------------------------------- |
+| `id`        | VARCHAR(36) | PRIMARY KEY, NOT NULL | Registration session UUID             |
+| `data`      | JSON        | NOT NULL              | Dynamic registration session data     |
+| `expiresAt` | BIGINT      | NOT NULL              | Session expiration epoch milliseconds |
 
 **Indexes:**
 
-- `expires_at_idx`: `(expiresAt)` - For cleanup queries and expiration checks
+- `reg_sessions_expires_at_idx`: `(expiresAt)` - For cleanup queries and expiration checks
 
 ## Connection Pool Behavior
 
@@ -272,8 +270,8 @@ podman run -d \
 ### Run Tests
 
 ```bash
-DATABASE_URL="mysql://lti_user:lti_password@127.0.0.1:3306/lti_test" npx drizzle-kit migrate
-DATABASE_URL="mysql://lti_user:lti_password@127.0.0.1:3306/lti_test" npm test
+DATABASE_URL="mysql://lti_user:lti_password@127.0.0.1:3306/lti_test" npm run db:migrate:mysql
+DATABASE_URL="mysql://lti_user:lti_password@127.0.0.1:3306/lti_test" npm run test:integration:mysql
 ```
 
 **Important:** Always close the pool(s) after tests:

@@ -557,22 +557,7 @@ export class DynamoDbStorage implements LTIStorage {
     );
     this.logDynamoDbResult(result, 'get launch config');
 
-    // if not found, try the default deployment (from dynamic registration)
-    if (!result.Item && deploymentId !== 'default') {
-      this.logger.debug({ deploymentId }, 'trying default deployment fallback');
-      result = await this.ddbClient.send(
-        new GetItemCommand({
-          TableName: this.launchConfigTable,
-          Key: marshall({
-            pk: `${iss}#${clientId}`,
-            sk: 'default',
-          }),
-          ReturnConsumedCapacity: 'TOTAL',
-        }),
-      );
-      this.logDynamoDbResult(result, 'get default launch config');
-    }
-
+    // Exact deployment match only; core launch resolution owns default-deployment fallback.
     if (!result.Item) {
       this.logger.warn({ iss, clientId, deploymentId }, 'launch config not found');
       LAUNCH_CONFIG_CACHE.set(cacheKey, undefinedLaunchConfigValue);

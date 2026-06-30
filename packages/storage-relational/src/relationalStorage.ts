@@ -14,7 +14,7 @@ import {
   toDeploymentInsertRow,
   toDeploymentUpdateRow,
   type DeploymentRow,
-} from '../../storage-drizzle/src/deploymentRow.js';
+} from './deploymentRow.js';
 import {
   parseRegistrationSessionDataRow,
   parseSessionDataRow,
@@ -24,13 +24,11 @@ import {
   type LaunchConfigRow,
   type RegistrationSessionDataRow,
   type SessionDataRow,
-} from '../../storage-drizzle/src/storageRows.js';
-
-export type MutationQuery = PromiseLike<unknown>;
+} from './storageRows.js';
 
 type QueryResult<Result> = PromiseLike<readonly Result[]> & {
   readonly where: (condition: unknown) => QueryResult<Result>;
-  readonly orderBy: (...columns: readonly AnyColumn[]) => QueryResult<Result>;
+  readonly orderBy: (...columns: readonly unknown[]) => QueryResult<Result>;
   readonly limit: (limit: number) => QueryResult<Result>;
   readonly innerJoin: (table: unknown, condition: unknown) => QueryResult<Result>;
 };
@@ -40,19 +38,20 @@ type SelectBuilder<Result> = {
 };
 
 type InsertBuilder = {
-  readonly values: (values: unknown) => MutationQuery;
+  readonly values: (values: unknown) => PromiseLike<unknown>;
 };
 
 type UpdateBuilder = {
   readonly set: (values: unknown) => {
-    readonly where: (condition: unknown) => MutationQuery;
+    readonly where: (condition: unknown) => PromiseLike<unknown>;
   };
 };
 
 type DeleteBuilder = {
-  readonly where: (condition: unknown) => MutationQuery;
+  readonly where: (condition: unknown) => PromiseLike<unknown>;
 };
 
+/** Drizzle-compatible query surface shared by SQL adapters. */
 export type RelationalDatabase = {
   readonly select: <Result>(selection?: unknown) => SelectBuilder<Result>;
   readonly insert: (table: unknown) => InsertBuilder;
@@ -190,8 +189,9 @@ export class RelationalStorage implements LTIStorage {
   ): Promise<void> {
     this.logger.info({ clientId, client }, 'updating client');
 
-    const existing = await this.getClientById(clientId);
-    if (!existing) throw new Error('Client not found');
+    if (!(await this.clientExists(clientId))) {
+      throw new Error('Client not found');
+    }
 
     await this.executeMutation(
       this.db
@@ -206,8 +206,7 @@ export class RelationalStorage implements LTIStorage {
   async deleteClient(clientId: string): Promise<void> {
     this.logger.info({ clientId }, 'deleting client');
 
-    const existing = await this.getClientById(clientId);
-    if (!existing) {
+    if (!(await this.clientExists(clientId))) {
       this.logger.warn({ clientId }, 'client not found for deletion');
       return;
     }
@@ -346,11 +345,11 @@ export class RelationalStorage implements LTIStorage {
       return undefined;
     }
 
-    return parseSessionDataRow(sessionRecord);
+    return parseSessionDataRow(sessionRecord, this.logger);
   }
 
   async addSession(session: LTISession): Promise<string> {
-    this.logger.debug({ sessionId: session.id }, 'adding session');
+    this.logger.info({ sessionId: session.id }, 'adding session');
 
     const expiresAt = Date.now() + this.dialect.sessionTtlSeconds * 1000;
     const row = toSessionDataRow(session);
@@ -374,17 +373,18 @@ export class RelationalStorage implements LTIStorage {
     this.logger.debug({ iss, clientId, deploymentId }, 'getting launch config');
 
     const row = await this.readLaunchConfigRow(iss, clientId, deploymentId);
-    if (row) return row;
-
-    if (deploymentId !== 'default') {
-      this.logger.debug({ deploymentId }, 'trying default deployment fallback');
-      return this.getLaunchConfig(iss, clientId, 'default');
+    if (!row) {
+      this.logger.warn({ iss, clientId, deploymentId }, 'launch config not found');
+      return undefined;
     }
 
-    this.logger.warn({ iss, clientId, deploymentId }, 'launch config not found');
-    return undefined;
+    return row;
   }
 
+  /**
+   * Relational adapters derive launch config from clients and deployments.
+   * Persisted launch config tables are adapter-specific (for example DynamoDB).
+   */
   // oxlint-disable-next-line require-await no-unused-vars
   async saveLaunchConfig(launchConfig: LTILaunchConfig): Promise<void> {
     this.logger.debug(
@@ -423,7 +423,7 @@ export class RelationalStorage implements LTIStorage {
       return undefined;
     }
 
-    return parseRegistrationSessionDataRow(record);
+    return parseRegistrationSessionDataRow(record, this.logger);
   }
 
   async deleteRegistrationSession(sessionId: string): Promise<void> {
@@ -445,6 +445,16 @@ export class RelationalStorage implements LTIStorage {
 
     this.logger.info(result, 'cleanup completed');
     return result;
+  }
+
+  private async clientExists(clientId: string): Promise<boolean> {
+    const [client] = await this.db
+      .select({ id: this.schema.clientsTable.id })
+      .from(this.schema.clientsTable)
+      .where(eq(this.schema.clientsTable.id, clientId))
+      .limit(1);
+
+    return client !== undefined;
   }
 
   private async readLaunchConfigRow(
@@ -534,7 +544,7 @@ export class RelationalStorage implements LTIStorage {
     return deployment === undefined ? undefined : mapDeploymentRow(deployment);
   }
 
-  private executeMutation(query: MutationQuery): Promise<unknown> {
+  private executeMutation(query: PromiseLike<unknown>): Promise<unknown> {
     return (this.dialect.executeMutation ?? executePromiseMutation)(query);
   }
 }
@@ -551,6 +561,9 @@ export function resolveStorageLogger(logger: Logger | undefined): Logger {
   );
 }
 
-export async function executePromiseMutation(query: MutationQuery): Promise<void> {
+export async function executePromiseMutation(query: PromiseLike<unknown>): Promise<void> {
   await Promise.resolve(query);
 }
+
+export { createMySqlDialect, getMySqlAffectedRows } from './mysqlDialect.js';
+export { createPostgresDialect } from './postgresDialect.js';

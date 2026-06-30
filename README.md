@@ -175,7 +175,9 @@ Service availability depends on what the platform enabled for the deployment. He
 | PostgreSQL / MySQL | Traditional deployments       | Drizzle schemas and migrations included in the package |
 | D1                 | Cloudflare Workers            | SQLite-compatible edge database                        |
 
-Each SQL adapter ships with a `drizzle.config.ts` and migration files. See the README in `packages/postgresql`, `packages/mysql`, or `packages/d1` for setup commands.
+Each SQL adapter ships with a `drizzle.config.ts` and generated migration files. The Drizzle schema files are the source of truth; use `npm run db:generate:*` after schema changes and `npm run db:check:migrations` before publishing migration changes. Run Drizzle commands from the monorepo root so the config paths resolve correctly. See the README in `packages/postgresql`, `packages/mysql`, or `packages/d1` for setup commands.
+
+Storage `getLaunchConfig` methods return exact deployment matches only. The core launch flow owns default-deployment resolution.
 
 ## Test with Moodle sandbox
 

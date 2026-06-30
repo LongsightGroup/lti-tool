@@ -37,6 +37,7 @@ const ltiTool = new LTITool({
 - **Production Ready** - Handles high-scale LTI deployments
 - **Built-in Caching** - LRU cache for frequently accessed data
 - **Three-Table Design** - Optimized access patterns
+- **Standalone Architecture** - Unlike the SQL adapters, DynamoDB intentionally keeps a self-contained implementation rather than sharing `RelationalStorage`
 - **Auto-cleanup** - Expired nonces and sessions removed automatically
 - **AWS Optimized** - Works seamlessly with Lambda and IAM roles
 
