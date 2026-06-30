@@ -165,31 +165,21 @@ Mount deep linking or dynamic registration explicitly when you need them:
 ```typescript
 import {
   completeDynamicRegistrationRouteHandler,
+  createLtiOptionalRouteDeps,
   deepLinkRouteHandler,
   initiateDynamicRegistrationRouteHandler,
 } from '@longsightgroup/lti-tool/hono';
 
-app.get(
-  '/lti/deep-linking',
-  deepLinkRouteHandler({
-    getSession: (sessionId) => ltiTool.getSession(sessionId),
-    logger,
-  }),
-);
+const optionalRoutes = createLtiOptionalRouteDeps({ ltiTool, logger });
+
+app.get('/lti/deep-linking', deepLinkRouteHandler(optionalRoutes.deepLink));
 app.get(
   '/lti/register',
-  initiateDynamicRegistrationRouteHandler({
-    initiateDynamicRegistration: (request, routePath) =>
-      ltiTool.initiateDynamicRegistration(request, routePath),
-    logger,
-  }),
+  initiateDynamicRegistrationRouteHandler(optionalRoutes.initiateDynamicRegistration),
 );
 app.post(
   '/lti/register/complete',
-  completeDynamicRegistrationRouteHandler({
-    completeDynamicRegistration: (form) => ltiTool.completeDynamicRegistration(form),
-    logger,
-  }),
+  completeDynamicRegistrationRouteHandler(optionalRoutes.completeDynamicRegistration),
 );
 ```
 

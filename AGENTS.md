@@ -61,7 +61,7 @@ packages/
 - **Hono routes** are thin: parse request → call `LTITool` → map result to HTTP. No business logic in route files.
 - One package on npm (`@longsightgroup/lti-tool`) with subpath exports. Do not reintroduce per-package `package.json` files or duplicate public surfaces.
 
-Dependencies are explicit and narrow. Prefer the package's primary composition helper for common framework wiring, and keep lower-level route or middleware handlers focused on the smallest dependency shape they actually use.
+Dependencies are explicit and narrow. Prefer `createLtiRoutes` for required protocol routes and `createLtiOptionalRouteDeps` when mounting deep linking or dynamic registration. Keep lower-level route or middleware handlers focused on the smallest dependency shape they actually use.
 
 ## Parsing and domain types
 

@@ -1,5 +1,10 @@
 // route exports
 export { createLtiRoutes, type CreateLtiRoutesOptions } from './createLtiRoutes.js';
+export {
+  createLtiOptionalRouteDeps,
+  type CreateLtiOptionalRouteDepsOptions,
+  type LtiOptionalRouteDeps,
+} from './createLtiOptionalRouteDeps.js';
 export type {
   LtiCompleteDynamicRegistrationRouteDeps,
   LtiDeepLinkRouteDeps,

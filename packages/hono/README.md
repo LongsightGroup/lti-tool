@@ -64,6 +64,7 @@ app.get('/protected/content', (c) => {
 ## Features
 
 - **createLtiRoutes** — mounts `/jwks`, `/login`, and `/launch` on a Hono sub-app
+- **createLtiOptionalRouteDeps** — binds deps for deep linking and dynamic registration routes
 - **Session Protection** — Middleware for protected routes
 - **Type Safety** — Full TypeScript support with Hono context
 - **Error Handling** — Structured error responses
@@ -84,6 +85,34 @@ app.route('/lti', createLtiRoutes({ ltiTool, logger }));
 ```
 
 Mount deep linking and dynamic registration with their explicit route handlers when needed.
+
+### createLtiOptionalRouteDeps(options)
+
+Binds dependency objects for optional routes from an existing `LTITool` instance. Pass the same `logger` you use with `createLtiRoutes` when you want route-level error logging.
+
+```typescript
+import {
+  completeDynamicRegistrationRouteHandler,
+  createLtiOptionalRouteDeps,
+  createLtiRoutes,
+  deepLinkRouteHandler,
+  initiateDynamicRegistrationRouteHandler,
+} from '@longsightgroup/lti-tool/hono';
+
+app.route('/lti', createLtiRoutes({ ltiTool, logger }));
+
+const optionalRoutes = createLtiOptionalRouteDeps({ ltiTool, logger });
+
+app.get('/lti/deep-linking', deepLinkRouteHandler(optionalRoutes.deepLink));
+app.get(
+  '/lti/register',
+  initiateDynamicRegistrationRouteHandler(optionalRoutes.initiateDynamicRegistration),
+);
+app.post(
+  '/lti/register/complete',
+  completeDynamicRegistrationRouteHandler(optionalRoutes.completeDynamicRegistration),
+);
+```
 
 ### Individual route handlers
 
