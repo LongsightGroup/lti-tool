@@ -142,7 +142,11 @@ describe('AGSService', () => {
       };
       mockFetch.mockResolvedValue(mockResponse);
 
-      const result = await agsService.submitScore(mockSession, mockScoreSubmission);
+      const result = await agsService.submitScore(
+        mockSession,
+        'https://platform.example.com/api/ags/lineitem/123',
+        mockScoreSubmission,
+      );
 
       expect(result).toBe(mockResponse);
 
@@ -184,20 +188,6 @@ describe('AGSService', () => {
       });
     });
 
-    it('throws error when AGS not available', async () => {
-      const sessionWithoutAGS = {
-        ...mockSession,
-        services: undefined,
-      };
-
-      await expect(
-        agsService.submitScore(sessionWithoutAGS, mockScoreSubmission),
-      ).rejects.toThrow('AGS not available for this session');
-
-      expect(mockTokenService.getBearerToken).not.toHaveBeenCalled();
-      expect(mockFetch).not.toHaveBeenCalled();
-    });
-
     it('throws error when platform returns error response', async () => {
       const mockErrorResponse = Response.json(
         {
@@ -209,7 +199,11 @@ describe('AGSService', () => {
       mockFetch.mockResolvedValue(mockErrorResponse);
 
       await expect(
-        agsService.submitScore(mockSession, mockScoreSubmission),
+        agsService.submitScore(
+          mockSession,
+          'https://platform.example.com/api/ags/lineitem/123',
+          mockScoreSubmission,
+        ),
       ).rejects.toMatchObject({
         name: 'LtiServiceError',
         code: 'platform_request_failed',
@@ -249,7 +243,10 @@ describe('AGSService', () => {
       };
       mockFetch.mockResolvedValue(mockResponse);
 
-      const result = await agsService.getScores(mockSession);
+      const result = await agsService.getScores(
+        mockSession,
+        'https://platform.example.com/api/ags/lineitem/123',
+      );
 
       expect(result).toBe(mockResponse);
       expect(mockTokenService.getBearerToken).toHaveBeenCalledWith(
@@ -273,9 +270,10 @@ describe('AGSService', () => {
       };
       mockFetch.mockResolvedValue(mockResponse);
 
-      await agsService.getScores(mockSession, {
-        lineItemUrl: 'https://platform.example.com/api/ags/lineitems/456',
-      });
+      await agsService.getScores(
+        mockSession,
+        'https://platform.example.com/api/ags/lineitems/456',
+      );
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://platform.example.com/api/ags/lineitems/456/results',
@@ -293,11 +291,14 @@ describe('AGSService', () => {
       };
       mockFetch.mockResolvedValue(mockResponse);
 
-      await agsService.getScores(mockSession, {
-        lineItemUrl: 'https://platform.example.com/api/ags/lineitems/456?existing=1',
-        userId: 'learner-1',
-        limit: 25,
-      });
+      await agsService.getScores(
+        mockSession,
+        'https://platform.example.com/api/ags/lineitems/456?existing=1',
+        {
+          userId: 'learner-1',
+          limit: 25,
+        },
+      );
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://platform.example.com/api/ags/lineitems/456/results?existing=1&user_id=learner-1&limit=25',
@@ -322,12 +323,16 @@ describe('AGSService', () => {
       };
       mockFetch.mockResolvedValue(mockResponse);
 
-      await agsService.listLineItems(mockSession, {
-        resourceId: 'resource-1',
-        resourceLinkId: 'resource-link-1',
-        tag: 'badges',
-        limit: 50,
-      });
+      await agsService.listLineItems(
+        mockSession,
+        'https://platform.example.com/api/ags/lineitems',
+        {
+          resourceId: 'resource-1',
+          resourceLinkId: 'resource-link-1',
+          tag: 'badges',
+          limit: 50,
+        },
+      );
 
       expect(mockTokenService.getBearerToken).toHaveBeenCalledWith(
         'client123',
@@ -357,9 +362,10 @@ describe('AGSService', () => {
       };
       mockFetch.mockResolvedValue(mockResponse);
 
-      await agsService.getLineItem(mockSession, {
-        lineItemUrl: 'https://platform.example.com/api/ags/lineitems/456',
-      });
+      await agsService.getLineItem(
+        mockSession,
+        'https://platform.example.com/api/ags/lineitems/456',
+      );
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://platform.example.com/api/ags/lineitems/456',

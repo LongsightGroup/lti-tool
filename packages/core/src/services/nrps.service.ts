@@ -36,28 +36,28 @@ export class NRPSService {
    * Retrieves all members (users) in the current course/context from the platform.
    * Returns raw response that should be parsed by the calling service.
    *
-   * @param session - Active LTI session containing NRPS service endpoints
+   * @param session - Active LTI session used for token lookup
+   * @param membershipUrl - Validated NRPS membership endpoint URL
    * @returns Promise resolving to the HTTP response containing membership data
-   * @throws {Error} When NRPS is not available for this session or request fails
+   * @throws {LtiServiceError} When token lookup, transport, or platform response fails
    *
    * @example
    * ```typescript
-   * const response = await nrpsService.getMembers(session);
+   * const response = await nrpsService.getMembers(
+   *   session,
+   *   'https://platform.example.com/nrps/members'
+   * );
    * const data = await response.json();
    * console.log('Course members:', data.members);
    * ```
    */
-  async getMembers(session: LTISession): Promise<Response> {
-    if (!session.services?.nrps?.membershipUrl) {
-      throw new Error('NRPS not available for this session');
-    }
-
+  async getMembers(session: LTISession, membershipUrl: string): Promise<Response> {
     const token = await this.getNRPSToken(
       session,
       LTI_NRPS_SCOPE_CONTEXT_MEMBERSHIP_READONLY,
     );
 
-    const response = await ltiServiceFetch(session.services.nrps.membershipUrl, {
+    const response = await ltiServiceFetch(membershipUrl, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,

@@ -37,8 +37,7 @@ export function createLtiRoutes(options: CreateLtiRoutesOptions): Hono {
     logger,
   };
   const launchDeps: LtiLaunchRouteDeps = {
-    verifyLaunchDetailed: (idToken, state) =>
-      ltiTool.verifyLaunchDetailed(idToken, state),
+    verifyLaunch: (idToken, state) => ltiTool.verifyLaunch(idToken, state),
     createSessionFromVerifiedLaunch: (launch) =>
       ltiTool.createSessionFromVerifiedLaunch(launch),
     logger,

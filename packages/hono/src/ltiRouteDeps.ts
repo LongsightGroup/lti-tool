@@ -19,10 +19,7 @@ export type LtiLoginRouteDeps = {
 };
 
 export type LtiLaunchRouteDeps = {
-  verifyLaunchDetailed: (
-    idToken: string,
-    state: string,
-  ) => Promise<LtiLaunchVerificationResult>;
+  verifyLaunch: (idToken: string, state: string) => Promise<LtiLaunchVerificationResult>;
   createSessionFromVerifiedLaunch: (launch: LtiVerifiedLaunch) => Promise<LTISession>;
   logger: Logger;
 };

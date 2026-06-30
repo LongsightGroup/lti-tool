@@ -28,7 +28,7 @@ describe('launchRouteHandler', () => {
   it('maps launch verification rejection codes to authentication failures', async () => {
     const createSessionFromVerifiedLaunch = vi.fn();
     const response = await requestLaunch({
-      verifyLaunchDetailed: () =>
+      verifyLaunch: () =>
         Promise.resolve({
           success: false,
           error: new LtiLaunchVerificationError('nonce_replay', 'Nonce replay'),
@@ -45,7 +45,7 @@ describe('launchRouteHandler', () => {
   it('maps launch verification dependency failures to internal server errors', async () => {
     const createSessionFromVerifiedLaunch = vi.fn();
     const response = await requestLaunch({
-      verifyLaunchDetailed: () =>
+      verifyLaunch: () =>
         Promise.resolve({
           success: false,
           error: new LtiLaunchVerificationError(

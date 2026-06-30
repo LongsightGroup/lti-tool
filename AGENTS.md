@@ -31,13 +31,13 @@ Ambiguity is a bug. Invalid input should fail clearly at the boundary, not be co
 
 ## Errors and control flow
 
-Two patterns exist today. **New code should use only the structured one.**
+Expected failures use structured result channels. Do not reintroduce throw-based duplicates.
 
-| Concern                                         | Preferred API                                              | Avoid for new code                                                                    |
-| ----------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Launch verification                             | `verifyLaunchDetailed` → `createSessionFromVerifiedLaunch` | `verifyLaunch` (throws generic `Error`)                                               |
-| LTI platform services (AGS, NRPS, registration) | `*Detailed` methods returning `LtiServiceResult<T>`        | Wrappers that throw `LtiServiceError`                                                 |
-| Launch registration (application code)          | `upsertLaunchRegistration` or dynamic registration         | `addClient` / `addDeployment` and other storage CRUD — custom admin UIs and adapters only |
+| Concern                                         | Preferred API                                      | Avoid for new code                                                                        |
+| ----------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Launch verification                             | `verifyLaunch` → `createSessionFromVerifiedLaunch` | Raw-payload session creation or throw wrappers                                            |
+| LTI platform services (AGS, NRPS, registration) | Canonical methods returning structured results     | Throw wrappers or duplicate `*Detailed` variants                                          |
+| Launch registration (application code)          | `upsertLaunchRegistration` or dynamic registration | `addClient` / `addDeployment` and other storage CRUD — custom admin UIs and adapters only |
 
 Expected failures belong in typed result channels (`{ success: false; error }`) with stable `code` fields. Reserve throws for programmer mistakes and for translating at HTTP/route boundaries.
 

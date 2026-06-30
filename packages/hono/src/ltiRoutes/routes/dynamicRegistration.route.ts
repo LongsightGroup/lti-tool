@@ -1,5 +1,6 @@
 import {
   DynamicRegistrationFormSchema,
+  type LtiServiceError,
   RegistrationRequestSchema,
 } from '@longsightgroup/lti-tool';
 import { type Handler } from 'hono';
@@ -23,9 +24,19 @@ export function initiateDynamicRegistrationRouteHandler(
     try {
       const queryData = c.req.query();
       const validated = RegistrationRequestSchema.parse(queryData);
-      const formHtml = await deps.initiateDynamicRegistration(validated, c.req.path);
+      const result = await deps.initiateDynamicRegistration(validated, c.req.path);
+      if (!result.success) {
+        deps.logger.error(
+          { error: result.error, path: c.req.path },
+          'lti dynamic registration initiation failed',
+        );
+        return c.json(
+          { error: 'Internal server error' },
+          dynamicRegistrationErrorStatus(result.error),
+        );
+      }
 
-      return c.html(formHtml);
+      return c.html(result.data);
     } catch (error) {
       deps.logger.error(
         { error, path: c.req.path },
@@ -58,9 +69,19 @@ export function completeDynamicRegistrationRouteHandler(
       };
       const validated = DynamicRegistrationFormSchema.parse(normalizedFormData);
 
-      const successHtml = await deps.completeDynamicRegistration(validated);
+      const result = await deps.completeDynamicRegistration(validated);
+      if (!result.success) {
+        deps.logger.error(
+          { error: result.error, path: c.req.path },
+          'lti dynamic registration completion failed',
+        );
+        return c.json(
+          { error: 'Internal server error' },
+          dynamicRegistrationErrorStatus(result.error),
+        );
+      }
 
-      return c.html(successHtml);
+      return c.html(result.data.html);
     } catch (error) {
       deps.logger.error({ error }, 'lti dynamic registration completion error');
       if (error instanceof ZodError) {
@@ -69,4 +90,15 @@ export function completeDynamicRegistrationRouteHandler(
       return c.json({ error: 'Internal server error' }, 500);
     }
   };
+}
+
+function dynamicRegistrationErrorStatus(error: LtiServiceError): 400 | 500 {
+  switch (error.code) {
+    case 'service_not_available':
+    case 'missing_required_scope':
+    case 'token_request_failed':
+    case 'platform_request_failed':
+    case 'platform_response_invalid':
+      return 500;
+  }
 }

@@ -151,7 +151,8 @@ const storeDynamicRegistrationResult = async (input: {
  * const formHtml = await service.initiateDynamicRegistration(request, '/lti/register');
  *
  * // Complete registration
- * const successHtml = await service.completeDynamicRegistration(formData);
+ * const result = await service.completeDynamicRegistration(formData);
+ * const successHtml = result.html;
  * ```
  *
  * @see https://www.imsglobal.org/spec/lti-dr/v1p0 LTI 1.3 Dynamic Registration specification
@@ -248,23 +249,10 @@ export class DynamicRegistrationService {
    * Validates session, registers with platform, stores client/deployment data, and returns success page.
    *
    * @param dynamicRegistrationForm - Validated form data containing selected services and session token
-   * @returns HTML success page with registration details and close button
-   * @throws {Error} When session is invalid, registration fails, or storage operations fail
-   */
-  async completeDynamicRegistration(
-    dynamicRegistrationForm: DynamicRegistrationForm,
-  ): Promise<string> {
-    return (await this.completeDynamicRegistrationDetailed(dynamicRegistrationForm)).html;
-  }
-
-  /**
-   * Completes LTI 1.3 dynamic registration and returns stored registration details.
-   *
-   * @param dynamicRegistrationForm - Validated form data containing selected services and session token
    * @returns HTML success page plus stored client, deployment, and launch config
    * @throws {Error} When session is invalid, registration fails, or storage operations fail
    */
-  async completeDynamicRegistrationDetailed(
+  async completeDynamicRegistration(
     dynamicRegistrationForm: DynamicRegistrationForm,
   ): Promise<LtiDynamicRegistrationCompletionResult> {
     // 1. Verify session token

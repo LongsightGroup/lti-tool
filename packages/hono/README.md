@@ -144,8 +144,7 @@ import { launchRouteHandler } from '@longsightgroup/lti-tool/hono';
 app.post(
   '/lti/launch',
   launchRouteHandler({
-    verifyLaunchDetailed: (idToken, state) =>
-      ltiTool.verifyLaunchDetailed(idToken, state),
+    verifyLaunch: (idToken, state) => ltiTool.verifyLaunch(idToken, state),
     createSessionFromVerifiedLaunch: (launch) =>
       ltiTool.createSessionFromVerifiedLaunch(launch),
     logger,

@@ -185,7 +185,7 @@ describe('DynamicRegistrationService', () => {
       sessionToken,
       services: [],
     };
-    const result = await service.completeDynamicRegistrationDetailed(form);
+    const result = await service.completeDynamicRegistration(form);
 
     expect(storage.deleteRegistrationSession).toHaveBeenCalledWith(sessionToken);
     expect(storage.addClient).toHaveBeenCalledWith(

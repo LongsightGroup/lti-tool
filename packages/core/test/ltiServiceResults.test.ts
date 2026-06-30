@@ -4,6 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LTI_AGS_SCOPE_LINEITEM,
   LTI_AGS_SCOPE_LINEITEM_READONLY,
+  LTI_AGS_SCOPE_RESULT_READONLY,
   LTI_AGS_SCOPE_SCORE,
   LtiServiceError,
   LTITool,
@@ -12,6 +13,8 @@ import {
 } from '../src/index.js';
 import type { CreateLineItem } from '../src/schemas/lti13/ags/lineItem.schema.js';
 import type { ScoreSubmission } from '../src/schemas/lti13/ags/scoreSubmission.schema.js';
+import type { DynamicRegistrationForm } from '../src/schemas/lti13/dynamicRegistration/ltiDynamicRegistration.schema.js';
+import type { RegistrationRequest } from '../src/schemas/lti13/dynamicRegistration/registrationRequest.schema.js';
 
 const createMockStorage = (): LTIStorage =>
   ({
@@ -59,6 +62,7 @@ const lineItemsSession = {
       scopes: [
         LTI_AGS_SCOPE_LINEITEM,
         LTI_AGS_SCOPE_LINEITEM_READONLY,
+        LTI_AGS_SCOPE_RESULT_READONLY,
         LTI_AGS_SCOPE_SCORE,
       ],
     },
@@ -83,7 +87,33 @@ const createLineItem: CreateLineItem = {
   scoreMaximum: 10,
 };
 
-describe('LTI detailed service results', () => {
+const results = [
+  {
+    id: 'https://platform.example.com/ags/lineitems/1/results/user-1',
+    scoreOf: 'https://platform.example.com/ags/lineitems/1',
+    userId: 'user-1',
+    resultScore: 9,
+    resultMaximum: 10,
+  },
+];
+
+const replaceAgsService = (ltiTool: LTITool, agsService: unknown): void => {
+  (
+    ltiTool as unknown as {
+      platformServices: { agsService: unknown };
+    }
+  ).platformServices.agsService = agsService;
+};
+
+const replaceNrpsService = (ltiTool: LTITool, nrpsService: unknown): void => {
+  (
+    ltiTool as unknown as {
+      platformServices: { nrpsService: unknown };
+    }
+  ).platformServices.nrpsService = nrpsService;
+};
+
+describe('LTI service results', () => {
   let keyPair: CryptoKeyPair;
   let ltiTool: LTITool;
 
@@ -101,15 +131,11 @@ describe('LTI detailed service results', () => {
 
   it('returns structured success for AGS score submission', async () => {
     const response = new Response(null, { status: 204 });
-    (
-      ltiTool as unknown as {
-        agsService: { submitScore: ReturnType<typeof vi.fn> };
-      }
-    ).agsService = {
+    replaceAgsService(ltiTool, {
       submitScore: vi.fn().mockResolvedValue(response),
-    };
+    });
 
-    const result = await ltiTool.submitScoreDetailed(session, score);
+    const result = await ltiTool.submitScore(session, score);
 
     expect(result).toEqual({
       success: true,
@@ -119,7 +145,7 @@ describe('LTI detailed service results', () => {
   });
 
   it('returns a missing scope error before AGS score submission', async () => {
-    const result = await ltiTool.submitScoreDetailed(
+    const result = await ltiTool.submitScore(
       {
         ...session,
         services: {
@@ -143,11 +169,7 @@ describe('LTI detailed service results', () => {
   });
 
   it('classifies token failures from service calls', async () => {
-    (
-      ltiTool as unknown as {
-        agsService: { submitScore: ReturnType<typeof vi.fn> };
-      }
-    ).agsService = {
+    replaceAgsService(ltiTool, {
       submitScore: vi.fn().mockRejectedValue(
         new LtiServiceError({
           code: 'token_request_failed',
@@ -160,9 +182,9 @@ describe('LTI detailed service results', () => {
           responseBodySummary: '{"error":"invalid_client"}',
         }),
       ),
-    };
+    });
 
-    const result = await ltiTool.submitScoreDetailed(session, score);
+    const result = await ltiTool.submitScore(session, score);
 
     expect(result.success).toBe(false);
     if (result.success) throw new Error('Expected detailed service failure');
@@ -179,13 +201,9 @@ describe('LTI detailed service results', () => {
   it('returns structured success for AGS line item listing', async () => {
     const response = Response.json([lineItem]);
     const listLineItems = vi.fn().mockResolvedValue(response);
-    (
-      ltiTool as unknown as {
-        agsService: { listLineItems: typeof listLineItems };
-      }
-    ).agsService = { listLineItems };
+    replaceAgsService(ltiTool, { listLineItems });
 
-    const result = await ltiTool.listLineItemsDetailed(lineItemsSession, {
+    const result = await ltiTool.listLineItems(lineItemsSession, {
       resourceId: 'quiz-1',
     });
 
@@ -193,21 +211,39 @@ describe('LTI detailed service results', () => {
     if (!result.success) throw new Error('Expected detailed service success');
     expect(result.data).toEqual([lineItem]);
     expect(result.response).toBe(response);
-    expect(listLineItems).toHaveBeenCalledWith(lineItemsSession, {
-      resourceId: 'quiz-1',
-    });
+    expect(listLineItems).toHaveBeenCalledWith(
+      lineItemsSession,
+      'https://platform.example.com/ags/lineitems',
+      {
+        resourceId: 'quiz-1',
+      },
+    );
+  });
+
+  it('returns structured success for AGS score retrieval', async () => {
+    const response = Response.json(results);
+    const getScores = vi.fn().mockResolvedValue(response);
+    replaceAgsService(ltiTool, { getScores });
+
+    const result = await ltiTool.getScores(lineItemsSession);
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected service success');
+    expect(result.data).toEqual(results);
+    expect(result.response).toBe(response);
+    expect(getScores).toHaveBeenCalledWith(
+      lineItemsSession,
+      'https://platform.example.com/ags/lineitems/1',
+      {},
+    );
   });
 
   it('returns structured success for AGS line item retrieval', async () => {
     const response = Response.json(lineItem);
     const getLineItem = vi.fn().mockResolvedValue(response);
-    (
-      ltiTool as unknown as {
-        agsService: { getLineItem: typeof getLineItem };
-      }
-    ).agsService = { getLineItem };
+    replaceAgsService(ltiTool, { getLineItem });
 
-    const result = await ltiTool.getLineItemDetailed(lineItemsSession, {
+    const result = await ltiTool.getLineItem(lineItemsSession, {
       lineItemUrl: 'https://platform.example.com/ags/lineitems/1',
     });
 
@@ -215,31 +251,62 @@ describe('LTI detailed service results', () => {
     if (!result.success) throw new Error('Expected detailed service success');
     expect(result.data).toEqual(lineItem);
     expect(result.response).toBe(response);
-    expect(getLineItem).toHaveBeenCalledWith(lineItemsSession, {
-      lineItemUrl: 'https://platform.example.com/ags/lineitems/1',
-    });
+    expect(getLineItem).toHaveBeenCalledWith(
+      lineItemsSession,
+      'https://platform.example.com/ags/lineitems/1',
+    );
   });
 
   it('returns structured success for AGS line item creation', async () => {
     const response = Response.json(lineItem);
     const createLineItemMock = vi.fn().mockResolvedValue(response);
-    (
-      ltiTool as unknown as {
-        agsService: { createLineItem: typeof createLineItemMock };
-      }
-    ).agsService = { createLineItem: createLineItemMock };
+    replaceAgsService(ltiTool, { createLineItem: createLineItemMock });
 
-    const result = await ltiTool.createLineItemDetailed(lineItemsSession, createLineItem);
+    const result = await ltiTool.createLineItem(lineItemsSession, createLineItem);
 
     expect(result.success).toBe(true);
     if (!result.success) throw new Error('Expected detailed service success');
     expect(result.data).toEqual(lineItem);
     expect(result.response).toBe(response);
-    expect(createLineItemMock).toHaveBeenCalledWith(lineItemsSession, createLineItem);
+    expect(createLineItemMock).toHaveBeenCalledWith(
+      lineItemsSession,
+      'https://platform.example.com/ags/lineitems',
+      createLineItem,
+    );
+  });
+
+  it('returns structured success for AGS line item update', async () => {
+    const response = Response.json(lineItem);
+    const updateLineItem = vi.fn().mockResolvedValue(response);
+    replaceAgsService(ltiTool, { updateLineItem });
+
+    const result = await ltiTool.updateLineItem(lineItemsSession, {
+      label: 'Quiz 1',
+      scoreMaximum: 10,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected service success');
+    expect(result.data).toEqual(lineItem);
+    expect(result.response).toBe(response);
+  });
+
+  it('returns structured success for AGS line item deletion', async () => {
+    const response = new Response(null, { status: 204 });
+    const deleteLineItem = vi.fn().mockResolvedValue(response);
+    replaceAgsService(ltiTool, { deleteLineItem });
+
+    const result = await ltiTool.deleteLineItem(lineItemsSession);
+
+    expect(result).toEqual({
+      success: true,
+      data: undefined,
+      response,
+    });
   });
 
   it('returns a missing scope error before AGS line item listing', async () => {
-    const result = await ltiTool.listLineItemsDetailed({
+    const result = await ltiTool.listLineItems({
       ...lineItemsSession,
       services: {
         ags: {
@@ -260,15 +327,11 @@ describe('LTI detailed service results', () => {
   });
 
   it('classifies invalid AGS line item platform responses', async () => {
-    (
-      ltiTool as unknown as {
-        agsService: { getLineItem: ReturnType<typeof vi.fn> };
-      }
-    ).agsService = {
+    replaceAgsService(ltiTool, {
       getLineItem: vi.fn().mockResolvedValue(Response.json({ label: 'Quiz 1' })),
-    };
+    });
 
-    const result = await ltiTool.getLineItemDetailed(lineItemsSession);
+    const result = await ltiTool.getLineItem(lineItemsSession);
 
     expect(result.success).toBe(false);
     if (result.success) throw new Error('Expected detailed service failure');
@@ -279,12 +342,44 @@ describe('LTI detailed service results', () => {
     });
   });
 
+  it('returns a missing scope error before AGS score retrieval', async () => {
+    const result = await ltiTool.getScores({
+      ...lineItemsSession,
+      services: {
+        ags: {
+          lineitem: 'https://platform.example.com/ags/lineitems/1',
+          scopes: [],
+        },
+      },
+    } as LTISession);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected service failure');
+    expect(result.error).toMatchObject({
+      code: 'missing_required_scope',
+      serviceKind: 'ags',
+      operation: 'getScores',
+    });
+  });
+
+  it('classifies invalid AGS score platform responses', async () => {
+    replaceAgsService(ltiTool, {
+      getScores: vi.fn().mockResolvedValue(Response.json({ resultScore: 9 })),
+    });
+
+    const result = await ltiTool.getScores(lineItemsSession);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected service failure');
+    expect(result.error).toMatchObject({
+      code: 'platform_response_invalid',
+      serviceKind: 'ags',
+      operation: 'getScores',
+    });
+  });
+
   it('classifies AGS line item service failures', async () => {
-    (
-      ltiTool as unknown as {
-        agsService: { createLineItem: ReturnType<typeof vi.fn> };
-      }
-    ).agsService = {
+    replaceAgsService(ltiTool, {
       createLineItem: vi.fn().mockRejectedValue(
         new LtiServiceError({
           code: 'platform_request_failed',
@@ -297,9 +392,9 @@ describe('LTI detailed service results', () => {
           responseBodySummary: 'upstream unavailable',
         }),
       ),
-    };
+    });
 
-    const result = await ltiTool.createLineItemDetailed(lineItemsSession, createLineItem);
+    const result = await ltiTool.createLineItem(lineItemsSession, createLineItem);
 
     expect(result.success).toBe(false);
     if (result.success) throw new Error('Expected detailed service failure');
@@ -314,11 +409,7 @@ describe('LTI detailed service results', () => {
   });
 
   it('returns normalized NRPS members on success', async () => {
-    (
-      ltiTool as unknown as {
-        nrpsService: { getMembers: ReturnType<typeof vi.fn> };
-      }
-    ).nrpsService = {
+    replaceNrpsService(ltiTool, {
       getMembers: vi.fn().mockResolvedValue(
         Response.json({
           id: 'https://platform.example.com/nrps/members',
@@ -333,9 +424,9 @@ describe('LTI detailed service results', () => {
           ],
         }),
       ),
-    };
+    });
 
-    const result = await ltiTool.getMembersDetailed(session);
+    const result = await ltiTool.getMembers(session);
 
     expect(result.success).toBe(true);
     if (!result.success) throw new Error('Expected detailed service success');
@@ -350,15 +441,11 @@ describe('LTI detailed service results', () => {
   });
 
   it('classifies invalid NRPS platform responses', async () => {
-    (
-      ltiTool as unknown as {
-        nrpsService: { getMembers: ReturnType<typeof vi.fn> };
-      }
-    ).nrpsService = {
+    replaceNrpsService(ltiTool, {
       getMembers: vi.fn().mockResolvedValue(Response.json({ members: [{}] })),
-    };
+    });
 
-    const result = await ltiTool.getMembersDetailed(session);
+    const result = await ltiTool.getMembers(session);
 
     expect(result.success).toBe(false);
     if (result.success) throw new Error('Expected detailed service failure');
@@ -366,6 +453,47 @@ describe('LTI detailed service results', () => {
       code: 'platform_response_invalid',
       serviceKind: 'nrps',
       operation: 'getMembers',
+    });
+  });
+
+  it('returns structured failures when dynamic registration is not configured', async () => {
+    const registrationRequest: RegistrationRequest = {
+      openid_configuration:
+        'https://platform.example.com/.well-known/openid-configuration',
+    };
+    const registrationForm: DynamicRegistrationForm = {
+      sessionToken: 'session-token-123',
+    };
+
+    const fetchResult = await ltiTool.fetchPlatformConfiguration(registrationRequest);
+    const initiateResult = await ltiTool.initiateDynamicRegistration(
+      registrationRequest,
+      '/lti/register',
+    );
+    const completeResult = await ltiTool.completeDynamicRegistration(registrationForm);
+
+    expect(fetchResult.success).toBe(false);
+    if (fetchResult.success) throw new Error('Expected service failure');
+    expect(fetchResult.error).toMatchObject({
+      code: 'service_not_available',
+      serviceKind: 'dynamic_registration',
+      operation: 'fetchPlatformConfiguration',
+    });
+
+    expect(initiateResult.success).toBe(false);
+    if (initiateResult.success) throw new Error('Expected service failure');
+    expect(initiateResult.error).toMatchObject({
+      code: 'service_not_available',
+      serviceKind: 'dynamic_registration',
+      operation: 'initiateDynamicRegistration',
+    });
+
+    expect(completeResult.success).toBe(false);
+    if (completeResult.success) throw new Error('Expected service failure');
+    expect(completeResult.error).toMatchObject({
+      code: 'service_not_available',
+      serviceKind: 'dynamic_registration',
+      operation: 'completeDynamicRegistration',
     });
   });
 });

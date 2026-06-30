@@ -13,8 +13,12 @@ import {
   LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST,
   LTI_VERSION_1P3P0,
 } from '../src/constants.js';
-import { LtiLaunchVerificationError } from '../src/index.js';
-import type { LTIConfig, LTIStorage } from '../src/interfaces/index.js';
+import {
+  LtiLaunchVerificationError,
+  type LTIConfig,
+  type LTIStorage,
+  type LtiVerifiedLaunch,
+} from '../src/index.js';
 import { LTITool } from '../src/ltiTool.js';
 
 import { createMockLTIPayload } from './helpers/fixtures.js';
@@ -141,6 +145,29 @@ describe('LTI Integration Tests', () => {
     return { jwt, stateJwt };
   }
 
+  async function verifyLaunchOrThrow(
+    idToken: string,
+    state: string,
+  ): Promise<LtiVerifiedLaunch> {
+    const result = await ltiTool.verifyLaunch(idToken, state);
+    if (!result.success) {
+      throw new Error(`Expected launch verification success: ${result.error.code}`);
+    }
+
+    return result.launch;
+  }
+
+  async function expectLaunchFailure(
+    idToken: string,
+    state: string,
+    code: LtiLaunchVerificationError['code'],
+  ): Promise<void> {
+    const result = await ltiTool.verifyLaunch(idToken, state);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected launch verification failure');
+    expect(result.error.code).toBe(code);
+  }
+
   describe('Login Flow', () => {
     it('generates valid login URL with state and nonce', async () => {
       const loginParams = {
@@ -191,10 +218,12 @@ describe('LTI Integration Tests', () => {
   });
 
   describe('Session Creation Flow', () => {
-    it('creates session from validated JWT payload', async () => {
+    it('creates session from a verified launch', async () => {
       const ltiPayload = createMockLTIPayload();
+      const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
+      const launch = await verifyLaunchOrThrow(jwt, stateJwt);
 
-      const session = await ltiTool.createSession(ltiPayload as any);
+      const session = await ltiTool.createSessionFromVerifiedLaunch(launch);
 
       expect(session.user.name).toBe('Jane Smith');
       expect(session.user.email).toBe('jane.smith@university.edu');
@@ -265,9 +294,9 @@ describe('LTI Integration Tests', () => {
         .mockRejectedValueOnce(kidMissError as any)
         .mockResolvedValueOnce({ payload: ltiPayload } as any);
 
-      const validated = await ltiTool.verifyLaunch(idToken, 'state-token');
+      const launch = await verifyLaunchOrThrow(idToken, 'state-token');
 
-      expect(validated).toEqual(ltiPayload);
+      expect(launch.payload).toEqual(ltiPayload);
       expect(createRemoteJWKSet).toHaveBeenCalledTimes(2);
       expect(jwtVerify).toHaveBeenCalledTimes(3);
       expect(jwtVerify).toHaveBeenNthCalledWith(2, idToken, staleJwks, {
@@ -299,11 +328,8 @@ describe('LTI Integration Tests', () => {
 
       const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
 
-      // Verify the launch JWT
-      const validatedPayload = await ltiTool.verifyLaunch(jwt, stateJwt);
-
-      // Create session from validated payload
-      const session = await ltiTool.createSession(validatedPayload);
+      const launch = await verifyLaunchOrThrow(jwt, stateJwt);
+      const session = await ltiTool.createSessionFromVerifiedLaunch(launch);
 
       expect(session.user.name).toBe('John Doe');
       expect(session.user.email).toBe('john.doe@university.edu');
@@ -319,7 +345,7 @@ describe('LTI Integration Tests', () => {
       });
       const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
 
-      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt);
 
       expect(result.success).toBe(true);
       if (!result.success) throw new Error('Expected launch verification success');
@@ -349,7 +375,7 @@ describe('LTI Integration Tests', () => {
       });
       const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
 
-      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt);
 
       expect(result.success).toBe(true);
       if (!result.success) throw new Error('Expected launch verification success');
@@ -366,7 +392,7 @@ describe('LTI Integration Tests', () => {
       });
       const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
 
-      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt, {
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt, {
         authorizeVerifiedLaunch: (launch) => {
           expect(launch.issuer).toBe('https://platform.example.com');
           expect(launch.clientId).toBe('client123');
@@ -395,7 +421,7 @@ describe('LTI Integration Tests', () => {
       });
       const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
 
-      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt, {
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt, {
         authorizeVerifiedLaunch: () => ({
           success: false,
           code: 'installation_not_authorized',
@@ -410,7 +436,7 @@ describe('LTI Integration Tests', () => {
     });
 
     it('returns structured launch verification errors', async () => {
-      const result = await ltiTool.verifyLaunchDetailed('', '');
+      const result = await ltiTool.verifyLaunch('', '');
 
       expect(result.success).toBe(false);
       if (result.success) throw new Error('Expected launch verification failure');
@@ -425,7 +451,7 @@ describe('LTI Integration Tests', () => {
       });
       const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
 
-      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt);
 
       expect(result.success).toBe(false);
       if (result.success) throw new Error('Expected launch verification failure');
@@ -453,7 +479,7 @@ describe('LTI Integration Tests', () => {
       });
       const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
 
-      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt);
 
       expect(result.success).toBe(false);
       if (result.success) throw new Error('Expected launch verification failure');
@@ -469,7 +495,7 @@ describe('LTI Integration Tests', () => {
       });
       const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
 
-      const result = await ltiTool.verifyLaunchDetailed(jwt, stateJwt);
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt);
 
       expect(result.success).toBe(false);
       if (result.success) throw new Error('Expected launch verification failure');
@@ -499,9 +525,9 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      const validatedPayload = await ltiTool.verifyLaunch(jwt, stateJwt);
+      const launch = await verifyLaunchOrThrow(jwt, stateJwt);
 
-      expect(validatedPayload.aud).toEqual(['client123']);
+      expect(launch.payload.aud).toEqual(['client123']);
       expect(mockStorage.getLaunchConfig).toHaveBeenCalledWith(
         'https://platform.example.com',
         'client123',
@@ -556,10 +582,10 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      const validatedPayload = await ltiTool.verifyLaunch(jwt, stateJwt);
-      const session = await ltiTool.createSession(validatedPayload);
+      const launch = await verifyLaunchOrThrow(jwt, stateJwt);
+      const session = await ltiTool.createSessionFromVerifiedLaunch(launch);
 
-      expect(validatedPayload.aud).toEqual(['other-client', 'client123']);
+      expect(launch.payload.aud).toEqual(['other-client', 'client123']);
       expect(session.platform.clientId).toBe('client123');
       expect(mockStorage.getLaunchConfig).toHaveBeenCalledTimes(1);
       expect(mockStorage.getLaunchConfig).toHaveBeenCalledWith(
@@ -592,9 +618,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow(
-        'Untrusted audience(s): other-client',
-      );
+      await expectLaunchFailure(jwt, stateJwt, 'untrusted_audience');
     });
 
     it('rejects LTI launch JWT when state client_id is not in audience', async () => {
@@ -620,7 +644,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow();
+      await expectLaunchFailure(jwt, stateJwt, 'jwt_verification_failed');
     });
 
     it('rejects LTI launch JWT when state issuer differs from token issuer', async () => {
@@ -645,9 +669,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow(
-        'Issuer mismatch',
-      );
+      await expectLaunchFailure(jwt, stateJwt, 'issuer_mismatch');
     });
 
     it('successfully verifies LTI launch JWT when target_link_uri matches state', async () => {
@@ -673,9 +695,9 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      const validatedPayload = await ltiTool.verifyLaunch(jwt, stateJwt);
+      const launch = await verifyLaunchOrThrow(jwt, stateJwt);
 
-      expect(validatedPayload[LTI_CLAIM_TARGET_LINK_URI]).toBe(
+      expect(launch.payload[LTI_CLAIM_TARGET_LINK_URI]).toBe(
         'https://tool.example.com/content',
       );
       expect(mockStorage.validateNonce).toHaveBeenCalledWith('test-nonce');
@@ -702,9 +724,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow(
-        'No target_link_uri in state',
-      );
+      await expectLaunchFailure(jwt, stateJwt, 'state_verification_failed');
       expect(mockStorage.validateNonce).not.toHaveBeenCalled();
     });
 
@@ -731,9 +751,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow(
-        'target_link_uri mismatch',
-      );
+      await expectLaunchFailure(jwt, stateJwt, 'target_link_uri_mismatch');
       expect(mockStorage.validateNonce).not.toHaveBeenCalled();
     });
 
@@ -760,9 +778,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow(
-        'target_link_uri mismatch',
-      );
+      await expectLaunchFailure(jwt, stateJwt, 'target_link_uri_mismatch');
       expect(mockStorage.validateNonce).not.toHaveBeenCalled();
     });
 
@@ -801,9 +817,9 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      const validatedPayload = await ltiTool.verifyLaunch(jwt, stateJwt);
+      const launch = await verifyLaunchOrThrow(jwt, stateJwt);
 
-      expect(validatedPayload.aud).toEqual(['client123', 'other-client']);
+      expect(launch.payload.aud).toEqual(['client123', 'other-client']);
     });
 
     it('rejects LTI launch JWT with empty audience array', async () => {
@@ -829,7 +845,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow();
+      await expectLaunchFailure(jwt, stateJwt, 'jwt_verification_failed');
     });
 
     it('rejects LTI launch JWT without deployment_id claim', async () => {
@@ -853,9 +869,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow(
-        'No deployment_id in token',
-      );
+      await expectLaunchFailure(jwt, stateJwt, 'missing_deployment_id');
     });
 
     it('rejects JWT with invalid signature', async () => {
@@ -891,7 +905,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(invalidJwt, stateJwt)).rejects.toThrow();
+      await expectLaunchFailure(invalidJwt, stateJwt, 'jwt_verification_failed');
     });
 
     it('rejects JWT with invalid nonce', async () => {
@@ -933,9 +947,7 @@ describe('LTI Integration Tests', () => {
         .setProtectedHeader({ alg: 'HS256' })
         .sign(stateSecret);
 
-      await expect(ltiTool.verifyLaunch(jwt, stateJwt)).rejects.toThrow(
-        'Nonce has already been used or expired',
-      );
+      await expectLaunchFailure(jwt, stateJwt, 'nonce_replay');
     });
   });
 });

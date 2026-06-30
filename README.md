@@ -198,7 +198,7 @@ Each handler accepts a small protocol-facing dependency object for tests and cus
 | `initiateDynamicRegistrationRouteHandler` | GET       | `/lti/register` — start dynamic registration               |
 | `completeDynamicRegistrationRouteHandler` | POST      | `/lti/register/complete` — finish dynamic registration     |
 
-You can also use the core `LTITool` class directly without Hono — call `handleLogin`, `verifyLaunchDetailed`, and `createSessionFromVerifiedLaunch` from your own framework.
+You can also use the core `LTITool` class directly without Hono — call `handleLogin`, `verifyLaunch`, and `createSessionFromVerifiedLaunch` from your own framework.
 
 ## LTI Advantage services
 

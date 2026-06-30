@@ -68,27 +68,32 @@ export class AGSService {
   /**
    * Submits a grade score to the platform using LTI Assignment and Grade Services.
    *
-   * @param session - Active LTI session containing AGS endpoint configuration
+   * @param session - Active LTI session used for token lookup
+   * @param lineItemUrl - Validated AGS line item endpoint URL
    * @param score - Score submission data including grade value and metadata
    * @returns Promise resolving to the HTTP response from the platform
-   * @throws {Error} When AGS is not available for the session or submission fails
+   * @throws {LtiServiceError} When token lookup, transport, or platform response fails
    *
    * @example
    * ```typescript
-   * await agsService.submitScore(session, {
-   *   scoreGiven: 85,
-   *   scoreMaximum: 100,
-   *   comment: 'Great work!',
-   *   activityProgress: 'Completed',
-   *   gradingProgress: 'FullyGraded'
-   * });
+   * await agsService.submitScore(
+   *   session,
+   *   'https://platform.example.com/ags/lineitems/1',
+   *   {
+   *     scoreGiven: 85,
+   *     scoreMaximum: 100,
+   *     comment: 'Great work!',
+   *     activityProgress: 'Completed',
+   *     gradingProgress: 'FullyGraded'
+   *   }
+   * );
    * ```
    */
-  async submitScore(session: LTISession, score: ScoreSubmission): Promise<Response> {
-    if (!session.services?.ags?.lineitem) {
-      throw new Error('AGS not available for this session');
-    }
-
+  async submitScore(
+    session: LTISession,
+    lineItemUrl: string,
+    score: ScoreSubmission,
+  ): Promise<Response> {
     const token = await this.getAGSToken(session, LTI_AGS_SCOPE_SCORE);
 
     const scorePayload = {
@@ -101,7 +106,7 @@ export class AGSService {
       gradingProgress: score.gradingProgress,
     };
 
-    const agsScoreEndpoint = `${session.services.ags.lineitem}/scores`;
+    const agsScoreEndpoint = `${lineItemUrl}/scores`;
     const response = await ltiServiceFetch(agsScoreEndpoint, {
       method: 'POST',
       headers: {
@@ -118,28 +123,27 @@ export class AGSService {
   /**
    * Retrieves all scores for a specific line item from the platform using Assignment and Grade Services.
    *
-   * @param session - Active LTI session containing AGS line item endpoint configuration
+   * @param session - Active LTI session used for token lookup
+   * @param lineItemUrl - Validated AGS line item endpoint URL
    * @param options - Optional line item target override and AGS result filters
    * @returns Promise resolving to the HTTP response containing scores data for the line item
-   * @throws {Error} When AGS line item service is not available for the session or request fails
+   * @throws {LtiServiceError} When token lookup, transport, or platform response fails
    *
    * @example
    * ```typescript
-   * const response = await agsService.getScores(session);
+   * const response = await agsService.getScores(
+   *   session,
+   *   'https://platform.example.com/ags/lineitems/1'
+   * );
    * const scores = await response.json();
    * console.log('All scores for this line item:', scores);
    * ```
    */
   async getScores(
     session: LTISession,
+    lineItemUrl: string,
     options: AGSGetScoresOptions = {},
   ): Promise<Response> {
-    const lineItemUrl = options.lineItemUrl ?? session.services?.ags?.lineitem;
-
-    if (!lineItemUrl) {
-      throw new Error('AGS line item not available for this session');
-    }
-
     const token = await this.getAGSToken(session, LTI_AGS_SCOPE_RESULT_READONLY);
 
     const response = await ltiServiceFetch(this.buildResultsUrl(lineItemUrl, options), {
@@ -157,30 +161,31 @@ export class AGSService {
   /**
    * Retrieves line items (gradebook columns) from the platform using Assignment and Grade Services.
    *
-   * @param session - Active LTI session containing AGS line items endpoint configuration
+   * @param session - Active LTI session used for token lookup
+   * @param lineItemsUrl - Validated AGS line items endpoint URL
    * @param options - Optional AGS line item list filters
    * @returns Promise resolving to the HTTP response containing line items data
-   * @throws {Error} When AGS line items service is not available for the session or request fails
+   * @throws {LtiServiceError} When token lookup, transport, or platform response fails
    *
    * @example
    * ```typescript
-   * const response = await agsService.listLineItems(session);
+   * const response = await agsService.listLineItems(
+   *   session,
+   *   'https://platform.example.com/ags/lineitems'
+   * );
    * const lineItems = await response.json();
    * console.log('Available gradebook columns:', lineItems);
    * ```
    */
   async listLineItems(
     session: LTISession,
+    lineItemsUrl: string,
     options: AGSListLineItemsOptions = {},
   ): Promise<Response> {
-    if (!session.services?.ags?.lineitems) {
-      throw new Error('AGS list line items not available for this session');
-    }
-
     const token = await this.getAGSToken(session, LTI_AGS_SCOPE_LINEITEM_READONLY);
 
     const response = await ltiServiceFetch(
-      this.buildLineItemsUrl(session.services.ags.lineitems, options),
+      this.buildLineItemsUrl(lineItemsUrl, options),
       {
         method: 'GET',
         headers: {
@@ -197,28 +202,22 @@ export class AGSService {
   /**
    * Retrieves a specific line item (gradebook column) from the platform using Assignment and Grade Services.
    *
-   * @param session - Active LTI session containing AGS line item endpoint configuration
-   * @param options - Optional line item target override
+   * @param session - Active LTI session used for token lookup
+   * @param lineItemUrl - Validated AGS line item endpoint URL
    * @returns Promise resolving to the HTTP response containing the line item data
-   * @throws {Error} When AGS line item service is not available for the session or request fails
+   * @throws {LtiServiceError} When token lookup, transport, or platform response fails
    *
    * @example
    * ```typescript
-   * const response = await agsService.getLineItem(session);
+   * const response = await agsService.getLineItem(
+   *   session,
+   *   'https://platform.example.com/ags/lineitems/1'
+   * );
    * const lineItem = await response.json();
    * console.log('Line item details:', lineItem);
    * ```
    */
-  async getLineItem(
-    session: LTISession,
-    options: AGSLineItemTargetOptions = {},
-  ): Promise<Response> {
-    const lineItemUrl = options.lineItemUrl ?? session.services?.ags?.lineitem;
-
-    if (!lineItemUrl) {
-      throw new Error('AGS line item not available for this session');
-    }
-
+  async getLineItem(session: LTISession, lineItemUrl: string): Promise<Response> {
     const token = await this.getAGSToken(session, LTI_AGS_SCOPE_LINEITEM_READONLY);
 
     const response = await ltiServiceFetch(lineItemUrl, {
@@ -236,34 +235,36 @@ export class AGSService {
   /**
    * Creates a new line item (gradebook column) on the platform using Assignment and Grade Services.
    *
-   * @param session - Active LTI session containing AGS line items endpoint configuration
+   * @param session - Active LTI session used for token lookup
+   * @param lineItemsUrl - Validated AGS line items endpoint URL
    * @param createLineItem - Line item data including label, scoreMaximum, and optional metadata
    * @returns Promise resolving to the HTTP response containing the created line item with generated ID
-   * @throws {Error} When AGS line item creation service is not available for the session or creation fails
+   * @throws {LtiServiceError} When token lookup, transport, or platform response fails
    *
    * @example
    * ```typescript
-   * const response = await agsService.createLineItem(session, {
-   *   label: 'Quiz 1',
-   *   scoreMaximum: 100,
-   *   tag: 'quiz',
-   *   resourceId: 'quiz-001'
-   * });
+   * const response = await agsService.createLineItem(
+   *   session,
+   *   'https://platform.example.com/ags/lineitems',
+   *   {
+   *     label: 'Quiz 1',
+   *     scoreMaximum: 100,
+   *     tag: 'quiz',
+   *     resourceId: 'quiz-001'
+   *   }
+   * );
    * const newLineItem = await response.json();
    * console.log('Created line item:', newLineItem.id);
    * ```
    */
   async createLineItem(
     session: LTISession,
+    lineItemsUrl: string,
     createLineItem: CreateLineItem,
   ): Promise<Response> {
-    if (!session.services?.ags?.lineitems) {
-      throw new Error('AGS create line items not available for this session');
-    }
-
     const token = await this.getAGSToken(session, LTI_AGS_SCOPE_LINEITEM);
 
-    const response = await ltiServiceFetch(`${session.services.ags.lineitems}`, {
+    const response = await ltiServiceFetch(lineItemsUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -279,32 +280,34 @@ export class AGSService {
   /**
    * Updates an existing line item (gradebook column) on the platform using Assignment and Grade Services.
    *
-   * @param session - Active LTI session containing AGS line item endpoint configuration
+   * @param session - Active LTI session used for token lookup
+   * @param lineItemUrl - Validated AGS line item endpoint URL
    * @param updateLineItem - Updated line item data including all required fields
    * @returns Promise resolving to the HTTP response containing the updated line item
-   * @throws {Error} When AGS line item service is not available for the session or update fails
+   * @throws {LtiServiceError} When token lookup, transport, or platform response fails
    *
    * @example
    * ```typescript
-   * const response = await agsService.updateLineItem(session, {
-   *   label: 'Quiz 1 (Updated)',
-   *   scoreMaximum: 100,
-   *   tag: 'quiz'
-   * });
+   * const response = await agsService.updateLineItem(
+   *   session,
+   *   'https://platform.example.com/ags/lineitems/1',
+   *   {
+   *     label: 'Quiz 1 (Updated)',
+   *     scoreMaximum: 100,
+   *     tag: 'quiz'
+   *   }
+   * );
    * const updatedLineItem = await response.json();
    * ```
    */
   async updateLineItem(
     session: LTISession,
+    lineItemUrl: string,
     updateLineItem: UpdateLineItem,
   ): Promise<Response> {
-    if (!session.services?.ags?.lineitem) {
-      throw new Error('AGS line item not available for this session');
-    }
-
     const token = await this.getAGSToken(session, LTI_AGS_SCOPE_LINEITEM);
 
-    const response = await ltiServiceFetch(session.services.ags.lineitem, {
+    const response = await ltiServiceFetch(lineItemUrl, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -320,24 +323,24 @@ export class AGSService {
   /**
    * Deletes a line item (gradebook column) from the platform using Assignment and Grade Services.
    *
-   * @param session - Active LTI session containing AGS line item endpoint configuration
+   * @param session - Active LTI session used for token lookup
+   * @param lineItemUrl - Validated AGS line item endpoint URL
    * @returns Promise resolving to the HTTP response (typically 204 No Content on success)
-   * @throws {Error} When AGS line item service is not available for the session or deletion fails
+   * @throws {LtiServiceError} When token lookup, transport, or platform response fails
    *
    * @example
    * ```typescript
-   * const response = await agsService.deleteLineItem(session);
+   * const response = await agsService.deleteLineItem(
+   *   session,
+   *   'https://platform.example.com/ags/lineitems/1'
+   * );
    * console.log('Line item deleted successfully');
    * ```
    */
-  async deleteLineItem(session: LTISession): Promise<Response> {
-    if (!session.services?.ags?.lineitem) {
-      throw new Error('AGS line item not available for this session');
-    }
-
+  async deleteLineItem(session: LTISession, lineItemUrl: string): Promise<Response> {
     const token = await this.getAGSToken(session, LTI_AGS_SCOPE_LINEITEM);
 
-    const response = await ltiServiceFetch(session.services.ags.lineitem, {
+    const response = await ltiServiceFetch(lineItemUrl, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${token}`,

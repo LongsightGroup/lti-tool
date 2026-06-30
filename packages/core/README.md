@@ -44,7 +44,7 @@ await ltiTool.upsertLaunchRegistration({
 
 const authUrl = await ltiTool.handleLogin(loginParams);
 
-const result = await ltiTool.verifyLaunchDetailed(idToken, state);
+const result = await ltiTool.verifyLaunch(idToken, state);
 if (result.success) {
   const session = await ltiTool.createSessionFromVerifiedLaunch(result.launch);
 }

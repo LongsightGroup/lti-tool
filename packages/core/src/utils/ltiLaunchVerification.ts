@@ -85,7 +85,7 @@ export type LtiVerifiedLaunchAuthorizationResult<TAuthorization> =
       cause?: unknown;
     };
 
-export interface LtiVerifyLaunchDetailedOptions<TAuthorization> {
+export interface LtiVerifyLaunchOptions<TAuthorization> {
   authorizeVerifiedLaunch?: (
     launch: LtiVerifiedLaunch,
   ) =>

@@ -21,7 +21,7 @@ export function launchRouteHandler(deps: LtiLaunchRouteDeps): Handler {
         state: formData.get('state'),
       });
 
-      const verification = await deps.verifyLaunchDetailed(id_token, state);
+      const verification = await deps.verifyLaunch(id_token, state);
       if (!verification.success) {
         const status = launchVerificationErrorStatus(verification.error.code);
         return c.json(

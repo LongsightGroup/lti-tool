@@ -1,4 +1,4 @@
-import { createNoopLogger } from '@longsightgroup/lti-tool';
+import { createNoopLogger, LtiServiceError } from '@longsightgroup/lti-tool';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,9 +48,15 @@ describe('initiateDynamicRegistrationRouteHandler', () => {
   });
 
   it('returns 500 when registration initiation fails after parsing', async () => {
-    initiateDynamicRegistrationMock.mockRejectedValueOnce(
-      new Error('platform unavailable'),
-    );
+    initiateDynamicRegistrationMock.mockResolvedValueOnce({
+      success: false,
+      error: new LtiServiceError({
+        code: 'platform_request_failed',
+        serviceKind: 'dynamic_registration',
+        operation: 'initiateDynamicRegistration',
+        message: 'platform unavailable',
+      }),
+    });
 
     const app = new Hono();
     app.get('/lti/register', initiateDynamicRegistrationRouteHandler(deps));
@@ -74,9 +80,12 @@ describe('completeDynamicRegistrationRouteHandler', () => {
   });
 
   it('accepts a single selected service from an html form post', async () => {
-    completeDynamicRegistrationMock.mockResolvedValueOnce(
-      '<html><body>Registration complete</body></html>',
-    );
+    completeDynamicRegistrationMock.mockResolvedValueOnce({
+      success: true,
+      data: {
+        html: '<html><body>Registration complete</body></html>',
+      },
+    });
 
     const app = new Hono();
     app.post('/lti/register/complete', completeDynamicRegistrationRouteHandler(deps));
@@ -102,9 +111,15 @@ describe('completeDynamicRegistrationRouteHandler', () => {
   });
 
   it('returns 500 when registration completion fails after parsing', async () => {
-    completeDynamicRegistrationMock.mockRejectedValueOnce(
-      new Error('registration unavailable'),
-    );
+    completeDynamicRegistrationMock.mockResolvedValueOnce({
+      success: false,
+      error: new LtiServiceError({
+        code: 'platform_request_failed',
+        serviceKind: 'dynamic_registration',
+        operation: 'completeDynamicRegistration',
+        message: 'registration unavailable',
+      }),
+    });
 
     const app = new Hono();
     app.post('/lti/register/complete', completeDynamicRegistrationRouteHandler(deps));
