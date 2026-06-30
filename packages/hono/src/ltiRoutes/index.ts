@@ -1,4 +1,14 @@
 // route exports
+export { createLtiRoutes, type CreateLtiRoutesOptions } from './createLtiRoutes.js';
+export type {
+  LtiCompleteDynamicRegistrationRouteDeps,
+  LtiDeepLinkRouteDeps,
+  LtiInitiateDynamicRegistrationRouteDeps,
+  LtiJwksRouteDeps,
+  LtiLaunchRouteDeps,
+  LtiLoginRouteDeps,
+  LtiSessionMiddlewareDeps,
+} from '../ltiRouteDeps.js';
 export { deepLinkRouteHandler } from './routes/deepLink.route.js';
 export {
   completeDynamicRegistrationRouteHandler,

@@ -4,30 +4,28 @@ import {
   parseLtiLoginInitiation,
   renderLtiPostMessageStorageRedirectPage,
   type LTI13LoginInitiation,
-  type LTIConfig,
 } from '@longsightgroup/lti-tool';
 import { type Context, type Handler } from 'hono';
 import { ZodError } from 'zod';
 
-import { getLTITool } from '../../ltiTool.js';
+import { type LtiLoginRouteDeps } from '../../ltiRouteDeps.js';
 
 /**
  * Creates a route handler for LTI login requests.
- * @param config - The LTI config
+ * @param deps - Protocol dependencies for the login route
  * @returns Route handler for LTI login
  */
-export function loginRouteHandler(config: LTIConfig): Handler {
+export function loginRouteHandler(deps: LtiLoginRouteDeps): Handler {
   return async (c) => {
     try {
       const params = await getLoginInitiationParams(c);
-      const ltiTool = getLTITool(config);
       const baseUrl = new URL(c.req.url).origin;
       const currentPath = new URL(c.req.url).pathname;
       const launchPath = currentPath.replace(/\/login$/, '/launch');
       const launchUrl = new URL(launchPath, baseUrl);
       const handleLoginParams = LTI13LoginSchema.parse(params);
 
-      const authRedirectUrl = await ltiTool.handleLogin({
+      const authRedirectUrl = await deps.handleLogin({
         ...handleLoginParams,
         launchUrl,
       });
@@ -39,7 +37,7 @@ export function loginRouteHandler(config: LTIConfig): Handler {
 
       return c.redirect(authRedirectUrl);
     } catch (error) {
-      config.logger?.error({ error, path: c.req.path }, 'Login endpoint error');
+      deps.logger.error({ error, path: c.req.path }, 'Login endpoint error');
       if (error instanceof ZodError) {
         return c.json({ error: 'Invalid request parameters' }, 400);
       }

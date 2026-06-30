@@ -1,8 +1,8 @@
-import type { LTIConfig, LTISession } from '@longsightgroup/lti-tool';
+import type { LTISession } from '@longsightgroup/lti-tool';
 import type { Context, MiddlewareHandler, Next, TypedResponse } from 'hono';
 import { endTime, startTime } from 'hono/timing';
 
-import { getLTITool } from '../ltiTool.js';
+import type { LtiSessionMiddlewareDeps } from '../ltiRouteDeps.js';
 import { LTIContentRequestSchema } from '../schemas/ltiContentRequest.schema.js';
 
 /**
@@ -15,10 +15,10 @@ export interface LTIContextVariables {
 
 /**
  * Creates middleware that validates LTI sessions and protects routes.
- * @param config - The LTI configuration object
+ * @param deps - Session lookup dependency for protected routes
  * @returns Hono middleware handler that validates LTI sessions
  */
-export function secureLTISession(config: LTIConfig): MiddlewareHandler {
+export function secureLTISession(deps: LtiSessionMiddlewareDeps): MiddlewareHandler {
   return async (
     c: Context<{ Variables: LTIContextVariables }>,
     next: Next,
@@ -29,7 +29,6 @@ export function secureLTISession(config: LTIConfig): MiddlewareHandler {
   > => {
     startTime(c, 'requireLtiSessionMiddleware');
 
-    const ltiTool = getLTITool(config);
     const result = LTIContentRequestSchema.safeParse(c.req.query());
     if (!result.success) {
       return c.text('LTI session ID required', 403);
@@ -38,7 +37,7 @@ export function secureLTISession(config: LTIConfig): MiddlewareHandler {
     const { ltiSessionId } = result.data;
 
     startTime(c, 'getSession');
-    const session = await ltiTool.getSession(ltiSessionId);
+    const session = await deps.getSession(ltiSessionId);
     endTime(c, 'getSession');
     if (!session) {
       return c.text('Invalid LTI session', 403);

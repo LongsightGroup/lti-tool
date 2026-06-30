@@ -1,29 +1,32 @@
-import type { LTIConfig } from '@longsightgroup/lti-tool';
+import { createNoopLogger } from '@longsightgroup/lti-tool';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { LtiLoginRouteDeps } from '../src/ltiRouteDeps.js';
 import { loginRouteHandler } from '../src/ltiRoutes/routes/login.route.js';
 
 const handleLoginMock = vi.fn();
 
-vi.mock('../src/ltiTool', () => ({
-  getLTITool: () => ({
+function createLoginRouteDeps(): LtiLoginRouteDeps {
+  return {
     handleLogin: handleLoginMock,
-  }),
-}));
+    logger: createNoopLogger(),
+  };
+}
 
 describe('loginRouteHandler', () => {
-  const config = {} as LTIConfig;
+  let deps: LtiLoginRouteDeps;
 
   beforeEach(() => {
     handleLoginMock.mockReset();
+    deps = createLoginRouteDeps();
   });
 
   it('accepts OIDC login-init params from GET query string', async () => {
     handleLoginMock.mockResolvedValueOnce('https://platform.example/authorize');
 
     const app = new Hono();
-    app.get('/lti/login', loginRouteHandler(config));
+    app.get('/lti/login', loginRouteHandler(deps));
 
     const response = await app.request(
       '/lti/login?iss=https%3A%2F%2Fsakai.example&login_hint=abc123&target_link_uri=https%3A%2F%2Ftool.example%2Flti%2Flaunch&client_id=client-1&lti_deployment_id=dep-1',
@@ -39,7 +42,7 @@ describe('loginRouteHandler', () => {
     handleLoginMock.mockResolvedValueOnce('https://platform.example/authorize');
 
     const app = new Hono();
-    app.post('/lti/login', loginRouteHandler(config));
+    app.post('/lti/login', loginRouteHandler(deps));
 
     const body = new URLSearchParams({
       iss: 'https://sakai.example',
@@ -64,7 +67,7 @@ describe('loginRouteHandler', () => {
 
   it('returns 400 when required params are missing', async () => {
     const app = new Hono();
-    app.get('/lti/login', loginRouteHandler(config));
+    app.get('/lti/login', loginRouteHandler(deps));
 
     const response = await app.request('/lti/login?iss=https%3A%2F%2Fsakai.example', {
       method: 'GET',

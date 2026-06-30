@@ -36,12 +36,7 @@ This example wires up the three endpoints every LTI 1.3 tool needs, registers a 
 ```typescript
 import { Hono } from 'hono';
 import { LTITool } from '@longsightgroup/lti-tool';
-import {
-  jwksRouteHandler,
-  launchRouteHandler,
-  loginRouteHandler,
-  secureLTISession,
-} from '@longsightgroup/lti-tool/hono';
+import { createLtiRoutes, secureLTISession } from '@longsightgroup/lti-tool/hono';
 import { MemoryStorage } from '@longsightgroup/lti-tool/storage/memory';
 
 const keyPair = await crypto.subtle.generateKey(
@@ -75,12 +70,9 @@ await ltiTool.upsertLaunchRegistration({
 
 const app = new Hono();
 
-app.get('/lti/jwks', jwksRouteHandler(ltiConfig));
-app.get('/lti/login', loginRouteHandler(ltiConfig));
-app.post('/lti/login', loginRouteHandler(ltiConfig));
-app.post('/lti/launch', launchRouteHandler(ltiConfig));
+app.route('/lti', createLtiRoutes({ ltiTool }));
 
-app.use('/app/*', secureLTISession(ltiConfig));
+app.use('/app/*', secureLTISession(ltiTool));
 app.get('/app', (c) => {
   const session = c.get('ltiSession');
   return c.json({ hello: session.user.name, course: session.context?.title });
@@ -142,6 +134,53 @@ Implement the `LTIStorage` interface yourself if you need Redis, another databas
 
 ## Hono routes
 
+`createLtiRoutes` mounts the standard LTI protocol endpoints on a Hono sub-app:
+
+```typescript
+app.route('/lti', createLtiRoutes({ ltiTool }));
+```
+
+This registers `/lti/jwks`, `/lti/login` (GET and POST), and `/lti/launch` (POST).
+
+Mount deep linking or dynamic registration explicitly when you need them:
+
+```typescript
+import {
+  completeDynamicRegistrationRouteHandler,
+  deepLinkRouteHandler,
+  initiateDynamicRegistrationRouteHandler,
+} from '@longsightgroup/lti-tool/hono';
+
+app.get(
+  '/lti/deep-linking',
+  deepLinkRouteHandler({
+    getSession: (sessionId) => ltiTool.getSession(sessionId),
+    logger,
+  }),
+);
+app.get(
+  '/lti/register',
+  initiateDynamicRegistrationRouteHandler({
+    initiateDynamicRegistration: (request, routePath) =>
+      ltiTool.initiateDynamicRegistration(request, routePath),
+    logger,
+  }),
+);
+app.post(
+  '/lti/register/complete',
+  completeDynamicRegistrationRouteHandler({
+    completeDynamicRegistration: (form) => ltiTool.completeDynamicRegistration(form),
+    logger,
+  }),
+);
+```
+
+`secureLTISession` middleware validates `ltiSessionId` on incoming requests and sets `ltiSession` on the Hono context. Mount it on your application paths, not on the LTI protocol routes.
+
+### Individual route handlers (advanced)
+
+Each handler accepts a small protocol-facing dependency object for tests and custom wiring:
+
 | Route handler                             | Method(s) | Endpoint (convention)                                      |
 | ----------------------------------------- | --------- | ---------------------------------------------------------- |
 | `jwksRouteHandler`                        | GET       | `/lti/jwks` — your tool's public keys                      |
@@ -151,9 +190,7 @@ Implement the `LTIStorage` interface yourself if you need Redis, another databas
 | `initiateDynamicRegistrationRouteHandler` | GET       | `/lti/register` — start dynamic registration               |
 | `completeDynamicRegistrationRouteHandler` | POST      | `/lti/register/complete` — finish dynamic registration     |
 
-`secureLTISession` middleware validates `ltiSessionId` on incoming requests and sets `ltiSession` on the Hono context.
-
-You can also use the core `LTITool` class directly without Hono — call `handleLogin`, `verifyLaunch`, and `createSession` from your own framework.
+You can also use the core `LTITool` class directly without Hono — call `handleLogin`, `verifyLaunchDetailed`, and `createSessionFromVerifiedLaunch` from your own framework.
 
 ## LTI Advantage services
 

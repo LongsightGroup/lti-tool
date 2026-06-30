@@ -3,7 +3,7 @@
 <p align="center">Hono middleware for LTI 1.3. Serverless-optimized with automatic route handling.</p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@longsightgroup/lti-tool/hono"><img alt="npm" src="https://img.shields.io/npm/v/%40lti-tool%2Fhono" /></a>
+  <a href="https://www.npmjs.com/package/@longsightgroup/lti-tool"><img alt="npm" src="https://img.shields.io/npm/v/%40longsightgroup%2Flti-tool" /></a>
 </p>
 
 ## Quick Start
@@ -17,7 +17,8 @@ npm create hono@latest
 Install the packages
 
 ```bash
-npm install @longsightgroup/lti-tool @longsightgroup/lti-tool/hono @longsightgroup/lti-tool/storage/memory
+npm install @longsightgroup/lti-tool hono
+npm install @longsightgroup/lti-tool/storage/memory
 ```
 
 Create a minimal Hono powered LTI tool
@@ -25,12 +26,7 @@ Create a minimal Hono powered LTI tool
 ```typescript
 import { Hono } from 'hono';
 import { LTITool } from '@longsightgroup/lti-tool';
-import {
-  jwksRouteHandler,
-  launchRouteHandler,
-  loginRouteHandler,
-  secureLTISession,
-} from '@longsightgroup/lti-tool/hono';
+import { createLtiRoutes, secureLTISession } from '@longsightgroup/lti-tool/hono';
 import { MemoryStorage } from '@longsightgroup/lti-tool/storage/memory';
 
 // Generate keypair (use proper key management in production)
@@ -55,13 +51,9 @@ const ltiTool = new LTITool(ltiConfig);
 
 const app = new Hono();
 
-// Add LTI routes
-app.get('/lti/jwks', jwksRouteHandler(ltiConfig));
-app.post('/lti/launch', launchRouteHandler(ltiConfig));
-app.post('/lti/login', loginRouteHandler(ltiConfig));
+app.route('/lti', createLtiRoutes({ ltiTool }));
 
-// Protect routes with LTI session
-app.use('/protected/*', secureLTISession(ltiConfig));
+app.use('/protected/*', secureLTISession(ltiTool));
 
 app.get('/protected/content', (c) => {
   const session = c.get('ltiSession');
@@ -71,58 +63,91 @@ app.get('/protected/content', (c) => {
 
 ## Features
 
-- **Automatic Routes** - `/login`, `/launch`, `/jwks` endpoints
-- **Session Protection** - Middleware for protected routes
-- **Type Safety** - Full TypeScript support with Hono context
-- **Error Handling** - Structured error responses
-- **Serverless Ready** - Optimized for AWS Lambda, Cloudflare Workers
+- **createLtiRoutes** — mounts `/jwks`, `/login`, and `/launch` on a Hono sub-app
+- **Session Protection** — Middleware for protected routes
+- **Type Safety** — Full TypeScript support with Hono context
+- **Error Handling** — Structured error responses
+- **Serverless Ready** — Optimized for AWS Lambda, Cloudflare Workers
 
 ## API Reference
 
 - [API Reference](https://docs.lti-tool.dev/modules/_lti-tool_hono.html) - Complete API documentation
 
-### Route Handlers
+### createLtiRoutes(options)
 
-Individual route handlers for LTI endpoints. Each handler takes your LTI configuration.
+Mounts required LTI protocol routes (`/jwks`, `/login`, `/launch`) on a Hono sub-app. Pass the same `LTITool` instance you use elsewhere in your app. Optionally pass a `logger` for route-level error logging.
 
-#### loginRouteHandler(config)
+```typescript
+import { createLtiRoutes } from '@longsightgroup/lti-tool/hono';
+
+app.route('/lti', createLtiRoutes({ ltiTool, logger }));
+```
+
+Mount deep linking and dynamic registration with their explicit route handlers when needed.
+
+### Individual route handlers
+
+Each handler accepts a narrow dependency object (`LtiLoginRouteDeps`, `LtiLaunchRouteDeps`, and so on) for custom paths or tests.
+
+#### loginRouteHandler(deps)
 
 Handles LTI login initiation (OIDC third-party initiated login).
 
 ```typescript
 import { loginRouteHandler } from '@longsightgroup/lti-tool/hono';
 
-app.post('/lti/login', loginRouteHandler(ltiConfig));
+app.post(
+  '/lti/login',
+  loginRouteHandler({
+    handleLogin: (params) => ltiTool.handleLogin(params),
+    logger,
+  }),
+);
 ```
 
-#### launchRouteHandler(config)
+#### launchRouteHandler(deps)
 
 Handles LTI launch verification and session creation.
 
 ```typescript
 import { launchRouteHandler } from '@longsightgroup/lti-tool/hono';
 
-app.post('/lti/launch', launchRouteHandler(ltiConfig));
+app.post(
+  '/lti/launch',
+  launchRouteHandler({
+    verifyLaunchDetailed: (idToken, state) =>
+      ltiTool.verifyLaunchDetailed(idToken, state),
+    createSessionFromVerifiedLaunch: (launch) =>
+      ltiTool.createSessionFromVerifiedLaunch(launch),
+    logger,
+  }),
+);
 ```
 
-#### jwksRouteHandler(config)
+#### jwksRouteHandler(deps)
 
 Serves the JSON Web Key Set (JWKS) for platform verification.
 
 ```typescript
 import { jwksRouteHandler } from '@longsightgroup/lti-tool/hono';
 
-app.get('/lti/jwks', jwksRouteHandler(ltiConfig));
+app.get(
+  '/lti/jwks',
+  jwksRouteHandler({
+    getJWKS: () => ltiTool.getJWKS(),
+    logger,
+  }),
+);
 ```
 
-### secureLTISession(config)
+### secureLTISession(deps)
 
-Middleware to protect routes with LTI session validation.
+Middleware to protect routes with LTI session validation. An `LTITool` instance satisfies the required `getSession` dependency.
 
 ```typescript
 import { secureLTISession } from '@longsightgroup/lti-tool/hono';
 
-app.use('/protected/*', secureLTISession(ltiTool.config));
+app.use('/protected/*', secureLTISession(ltiTool));
 
 app.get('/protected/grades', (c) => {
   const session = c.get('ltiSession'); // Typed LTISession
