@@ -69,6 +69,11 @@
       "source": "./packages/storage-drizzle/src/deploymentRow.ts",
       "types": "./dist/packages/storage-drizzle/src/deploymentRow.d.ts",
       "import": "./dist/packages/storage-drizzle/src/deploymentRow.js"
+    },
+    "#storage/relational-storage": {
+      "source": "./packages/storage-relational/src/relationalStorage.ts",
+      "types": "./dist/packages/storage-relational/src/relationalStorage.d.ts",
+      "import": "./dist/packages/storage-relational/src/relationalStorage.js"
     }
   },
   "scripts": {

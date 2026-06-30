@@ -1,535 +1,222 @@
-import {
-  isServerlessEnvironment,
-  type LTIClient,
-  type LTIDeployment,
-  type LTIDynamicRegistrationSession,
-  type LTILaunchConfig,
-  type LTISession,
-  type LTIStorage,
-} from '@longsightgroup/lti-tool';
+import { isServerlessEnvironment } from '@longsightgroup/lti-tool';
 import { and, eq, gt, lt } from 'drizzle-orm';
 import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
 import type { Logger } from 'pino';
 
-import { mapDeploymentRow, toDeploymentUpdateRow } from '#storage/drizzle-deployment-row';
+import { toDeploymentInsertRow } from '#storage/drizzle-deployment-row';
+import {
+  RelationalStorage,
+  type RelationalCleanupResult,
+  type RelationalDatabase,
+  type RelationalStorageDialect,
+  resolveStorageLogger,
+  validateNonceSelectThenInsert,
+} from '#storage/relational-storage';
 
-import { SESSION_CACHE, SESSION_TTL, undefinedSessionValue } from './cacheConfig.js';
+import { NONCE_TTL, SESSION_TTL } from './cacheConfig.js';
 import * as schema from './db/schema/index.js';
 import type { MySqlStorageConfig } from './interfaces/mySqlStorageConfig.js';
 
 /**
  * MySQL implementation of LTI storage interface.
- *
- * Stores clients, deployments, sessions, and nonces in MySQL with LRU caching.
- * Uses Drizzle ORM for type-safe database operations.
  */
-export class MySqlStorage implements LTIStorage {
-  private logger: Logger;
-  private db: MySql2Database<typeof schema>;
-  private pool: mysql.Pool;
-  private nonceExpirationSeconds: number;
+export class MySqlStorage extends RelationalStorage {
+  private readonly adapterLogger: Logger;
+  private readonly pool: mysql.Pool;
 
   constructor(config: MySqlStorageConfig) {
-    this.logger =
-      config?.logger ??
-      ({
-        debug: () => {},
-        info: () => {},
-        warn: () => {},
-        error: () => {},
-      } as unknown as Logger);
-
-    this.nonceExpirationSeconds = config.nonceExpirationSeconds ?? 600;
-
-    // Smart connection limit defaults
-    const isServerless = isServerlessEnvironment();
-    const defaultConnectionLimit = isServerless ? 1 : 10;
-    const connectionLimit = config.poolOptions?.connectionLimit ?? defaultConnectionLimit;
-
-    // Warn if high connection limit in serverless
-    if (isServerless && connectionLimit > 5) {
-      this.logger.warn(
-        { connectionLimit, environment: 'serverless' },
-        'High connectionLimit detected in serverless environment. Consider using 1 connection per container to avoid wasting resources.',
-      );
-    }
-
-    // Create connection pool
-    this.pool = mysql.createPool({
+    const logger = resolveStorageLogger(config.logger);
+    const connectionOptions = resolveConnectionOptions(config, logger);
+    const pool = mysql.createPool({
       uri: config.connectionUrl,
-      connectionLimit,
-      queueLimit: config.poolOptions?.queueLimit ?? 0,
+      connectionLimit: connectionOptions.connectionLimit,
+      queueLimit: connectionOptions.queueLimit,
+    });
+    const db = drizzle(pool, { schema, mode: 'default' });
+
+    super({
+      logger,
+      db: db as unknown as RelationalDatabase,
+      schema,
+      dialect: createMySqlDialect(db),
     });
 
-    // Initialize Drizzle
-    this.db = drizzle(this.pool, { schema, mode: 'default' });
+    this.adapterLogger = logger;
+    this.pool = pool;
 
-    this.logger.debug(
-      {
-        connectionLimit,
-        isServerless,
-        queueLimit: config.poolOptions?.queueLimit ?? 0,
-      },
-      'MySQL connection pool initialized',
-    );
-  }
-
-  async listClients(): Promise<Omit<LTIClient, 'deployments'>[]> {
-    this.logger.debug('listing all clients');
-
-    const clients = await this.db.select().from(schema.clientsTable);
-
-    this.logger.debug({ count: clients.length }, 'clients found');
-    return clients;
-  }
-
-  async getClientById(clientId: string): Promise<LTIClient | undefined> {
-    this.logger.debug({ clientId }, 'getting client by id');
-
-    const [client] = await this.db
-      .select()
-      .from(schema.clientsTable)
-      .where(eq(schema.clientsTable.id, clientId))
-      .limit(1);
-
-    if (!client) {
-      this.logger.warn({ clientId }, 'client not found');
-      return undefined;
-    }
-
-    return {
-      ...client,
-      deployments: await this.listDeployments(clientId),
-    };
-  }
-
-  async addClient(client: Omit<LTIClient, 'id' | 'deployments'>): Promise<string> {
-    const clientId = crypto.randomUUID();
-    this.logger.info({ client, clientId }, 'adding client');
-
-    await this.db.insert(schema.clientsTable).values({
-      id: clientId,
-      ...client,
-    });
-
-    this.logger.debug({ clientId }, 'client added');
-    return clientId;
-  }
-
-  async updateClient(
-    clientId: string,
-    client: Partial<Omit<LTIClient, 'id' | 'deployments'>>,
-  ): Promise<void> {
-    this.logger.info({ clientId, client }, 'updating client');
-
-    const existing = await this.getClientById(clientId);
-    if (!existing) throw new Error('Client not found');
-
-    await this.db
-      .update(schema.clientsTable)
-      .set(client)
-      .where(eq(schema.clientsTable.id, clientId));
-
-    this.logger.debug({ clientId }, 'client updated');
-  }
-
-  async deleteClient(clientId: string): Promise<void> {
-    this.logger.info({ clientId }, 'deleting client');
-
-    const existing = await this.getClientById(clientId);
-    if (!existing) {
-      this.logger.warn({ clientId }, 'client not found for deletion');
-      return;
-    }
-
-    // Delete client and all deployments in a transaction
-    await this.db.transaction(async (tx) => {
-      // Delete all deployments first (child records)
-      await tx
-        .delete(schema.deploymentsTable)
-        .where(eq(schema.deploymentsTable.clientId, clientId));
-
-      this.logger.debug({ clientId }, 'deployments deleted');
-
-      // Then delete the client (parent record)
-      await tx.delete(schema.clientsTable).where(eq(schema.clientsTable.id, clientId));
-
-      this.logger.debug({ clientId }, 'client deleted');
-    });
-
-    this.logger.debug({ clientId }, 'client and all deployments deleted');
-  }
-
-  async listDeployments(clientId: string): Promise<LTIDeployment[]> {
-    this.logger.debug({ clientId }, 'listing deployments for client');
-
-    const rows = await this.db
-      .select()
-      .from(schema.deploymentsTable)
-      .where(eq(schema.deploymentsTable.clientId, clientId))
-      .orderBy(schema.deploymentsTable.deploymentId, schema.deploymentsTable.id);
-    const deployments = rows.map(mapDeploymentRow);
-
-    this.logger.debug({ clientId, count: deployments.length }, 'deployments found');
-    return deployments;
-  }
-
-  async getDeploymentByPlatformId(
-    clientId: string,
-    deploymentId: string,
-  ): Promise<LTIDeployment | undefined> {
-    this.logger.debug({ clientId, deploymentId }, 'getting deployment by platform id');
-
-    const [row] = await this.db
-      .select()
-      .from(schema.deploymentsTable)
-      .where(
-        and(
-          eq(schema.deploymentsTable.clientId, clientId),
-          eq(schema.deploymentsTable.deploymentId, deploymentId),
-        ),
-      )
-      .limit(1);
-    const deployment = row === undefined ? undefined : mapDeploymentRow(row);
-    if (!deployment) {
-      this.logger.warn({ clientId, deploymentId }, 'deployment not found');
-      return undefined;
-    }
-
-    return deployment;
-  }
-
-  async addDeployment(
-    clientId: string,
-    deployment: Omit<LTIDeployment, 'id'>,
-  ): Promise<string> {
-    this.logger.info({ clientId, deployment }, 'adding deployment');
-    const deploymentInternalId = crypto.randomUUID();
-
-    await this.db.insert(schema.deploymentsTable).values({
-      id: deploymentInternalId,
-      clientId,
-      ...deployment,
-    });
-
-    this.logger.debug({ deploymentInternalId }, 'deployment added');
-    return deploymentInternalId;
-  }
-
-  async updateDeploymentById(
-    clientId: string,
-    deploymentId: string,
-    deployment: Partial<LTIDeployment>,
-  ): Promise<void> {
-    this.logger.info({ clientId, deploymentId, deployment }, 'updating deployment');
-
-    const existing = await this.getDeploymentByInternalId(clientId, deploymentId);
-    if (!existing) throw new Error('Deployment not found');
-
-    const updated = { ...existing, ...deployment };
-    await this.db
-      .update(schema.deploymentsTable)
-      .set(toDeploymentUpdateRow(updated))
-      .where(
-        and(
-          eq(schema.deploymentsTable.clientId, clientId),
-          eq(schema.deploymentsTable.id, deploymentId),
-        ),
-      );
-
-    this.logger.debug({ deploymentId }, 'deployment updated');
-  }
-
-  async deleteDeploymentById(clientId: string, deploymentId: string): Promise<void> {
-    this.logger.info({ clientId, deploymentId }, 'deleting deployment');
-
-    const existing = await this.getDeploymentByInternalId(clientId, deploymentId);
-    if (!existing) {
-      this.logger.warn({ clientId, deploymentId }, 'deployment not found for deletion');
-      return;
-    }
-
-    await this.db
-      .delete(schema.deploymentsTable)
-      .where(
-        and(
-          eq(schema.deploymentsTable.clientId, clientId),
-          eq(schema.deploymentsTable.id, deploymentId),
-        ),
-      );
-
-    this.logger.debug({ clientId, deploymentId }, 'deployment deleted');
-  }
-
-  async validateNonce(nonce: string): Promise<boolean> {
-    this.logger.debug({ nonce }, 'validating nonce');
-
-    // 1. Check if nonce exists and is still valid (not expired)
-    const [existing] = await this.db
-      .select()
-      .from(schema.noncesTable)
-      .where(
-        and(
-          eq(schema.noncesTable.nonce, nonce),
-          gt(schema.noncesTable.expiresAt, new Date()), // expiresAt > NOW()
-        ),
-      )
-      .limit(1);
-
-    if (existing) {
-      this.logger.warn({ nonce }, 'nonce already used - replay attack detected');
-      return false; // Nonce exists and hasn't expired = replay attack
-    }
-
-    // 2. Try to insert the nonce
-    const expiresAt = new Date(Date.now() + this.nonceExpirationSeconds * 1000);
-
-    try {
-      await this.db.insert(schema.noncesTable).values({ nonce, expiresAt });
-      return true;
-    } catch (error) {
-      // Duplicate key error (race condition - another request inserted same nonce)
-      // MySQL error code for duplicate entry
-      if ((error as { code?: string }).code === 'ER_DUP_ENTRY') {
-        this.logger.warn({ nonce }, 'nonce collision detected - replay attack');
-        return false;
-      }
-      throw error;
-    }
-  }
-
-  async getSession(sessionId: string): Promise<LTISession | undefined> {
-    this.logger.debug({ sessionId }, 'getting session');
-
-    // Check cache first
-    const cachedSession = SESSION_CACHE.get(sessionId);
-    if (cachedSession === undefinedSessionValue) {
-      return undefined;
-    }
-    if (cachedSession) {
-      this.logger.debug({ sessionId }, 'session found in cache');
-      return cachedSession;
-    }
-
-    // Query database
-    const [sessionRecord] = await this.db
-      .select()
-      .from(schema.sessionsTable)
-      .where(
-        and(
-          eq(schema.sessionsTable.id, sessionId),
-          gt(schema.sessionsTable.expiresAt, new Date()), // Not expired
-        ),
-      )
-      .limit(1);
-
-    if (!sessionRecord) {
-      this.logger.warn({ sessionId }, 'session not found');
-      SESSION_CACHE.set(sessionId, undefinedSessionValue);
-      return undefined;
-    }
-
-    const session: LTISession = {
-      id: sessionRecord.id,
-      ...sessionRecord.data,
-    };
-
-    SESSION_CACHE.set(sessionId, session);
-    return session;
-  }
-
-  async addSession(session: LTISession): Promise<string> {
-    this.logger.debug({ sessionId: session.id }, 'adding session');
-
-    const expiresAt = new Date(Date.now() + SESSION_TTL * 1000);
-    const { id, ...data } = session;
-
-    await this.db.insert(schema.sessionsTable).values({
-      id,
-      data,
-      expiresAt,
-    });
-
-    // Cache the session
-    SESSION_CACHE.set(session.id, session);
-    this.logger.debug({ sessionId: session.id }, 'session added');
-    return session.id;
-  }
-
-  // oxlint-disable-next-line max-lines-per-function
-  async getLaunchConfig(
-    iss: string,
-    clientId: string,
-    deploymentId: string,
-  ): Promise<LTILaunchConfig | undefined> {
-    this.logger.debug({ iss, clientId, deploymentId }, 'getting launch config');
-
-    // Query for client and deployment
-    const [result] = await this.db
-      .select({
-        client: schema.clientsTable,
-        deployment: schema.deploymentsTable,
-      })
-      .from(schema.clientsTable)
-      .innerJoin(
-        schema.deploymentsTable,
-        eq(schema.deploymentsTable.clientId, schema.clientsTable.id),
-      )
-      .where(
-        and(
-          eq(schema.clientsTable.iss, iss),
-          eq(schema.clientsTable.clientId, clientId),
-          eq(schema.deploymentsTable.deploymentId, deploymentId),
-        ),
-      )
-      .limit(1);
-
-    if (!result) {
-      // Try with 'default' deployment (for dynamic registration)
-      if (deploymentId !== 'default') {
-        this.logger.debug({ deploymentId }, 'trying default deployment fallback');
-        return this.getLaunchConfig(iss, clientId, 'default');
-      }
-
-      this.logger.warn({ iss, clientId, deploymentId }, 'launch config not found');
-      return undefined;
-    }
-
-    return {
-      iss: result.client.iss,
-      clientId: result.client.clientId,
-      deploymentId: result.deployment.deploymentId,
-      authUrl: result.client.authUrl,
-      tokenUrl: result.client.tokenUrl,
-      jwksUrl: result.client.jwksUrl,
-    };
-  }
-
-  // oxlint-disable-next-line require-await no-unused-vars
-  async saveLaunchConfig(launchConfig: LTILaunchConfig): Promise<void> {
-    // MySQL storage doesn't need to persist launch configs separately
-    // since they're derived from client + deployment data
-    this.logger.debug({ launchConfig }, 'launch config would be saved (no-op in MySQL)');
-  }
-
-  async setRegistrationSession(
-    sessionId: string,
-    session: LTIDynamicRegistrationSession,
-  ): Promise<void> {
-    this.logger.debug({ sessionId }, 'setting registration session');
-
-    const expiresAt = new Date(session.expiresAt);
-
-    await this.db.insert(schema.registrationSessionsTable).values({
-      id: sessionId,
-      data: session,
-      expiresAt,
-    });
-
-    this.logger.debug({ sessionId }, 'registration session stored');
-  }
-
-  async getRegistrationSession(
-    sessionId: string,
-  ): Promise<LTIDynamicRegistrationSession | undefined> {
-    this.logger.debug({ sessionId }, 'getting registration session');
-
-    const [record] = await this.db
-      .select()
-      .from(schema.registrationSessionsTable)
-      .where(
-        and(
-          eq(schema.registrationSessionsTable.id, sessionId),
-          gt(schema.registrationSessionsTable.expiresAt, new Date()),
-        ),
-      )
-      .limit(1);
-
-    if (!record) {
-      this.logger.warn({ sessionId }, 'registration session not found or expired');
-      return undefined;
-    }
-
-    return record.data;
-  }
-
-  async deleteRegistrationSession(sessionId: string): Promise<void> {
-    this.logger.debug({ sessionId }, 'deleting registration session');
-
-    await this.db
-      .delete(schema.registrationSessionsTable)
-      .where(eq(schema.registrationSessionsTable.id, sessionId));
-
-    this.logger.debug({ sessionId }, 'registration session deleted');
-  }
-
-  /**
-   * Clean up expired nonces, sessions, and registration sessions.
-   * Should be called periodically (e.g., every 30 minutes via EventBridge).
-   *
-   * @returns Object with counts of deleted items
-   */
-  async cleanup(): Promise<{
-    noncesDeleted: number;
-    sessionsDeleted: number;
-    registrationSessionsDeleted: number;
-  }> {
-    this.logger.info('starting cleanup of expired items');
-
-    const now = new Date();
-
-    // Delete expired nonces
-    const noncesResult = await this.db
-      .delete(schema.noncesTable)
-      .where(lt(schema.noncesTable.expiresAt, now));
-
-    // Delete expired sessions
-    const sessionsResult = await this.db
-      .delete(schema.sessionsTable)
-      .where(lt(schema.sessionsTable.expiresAt, now));
-
-    // Delete expired registration sessions
-    const regSessionsResult = await this.db
-      .delete(schema.registrationSessionsTable)
-      .where(lt(schema.registrationSessionsTable.expiresAt, now));
-
-    const result = {
-      noncesDeleted: Number(noncesResult[0]?.affectedRows ?? 0),
-      sessionsDeleted: Number(sessionsResult[0]?.affectedRows ?? 0),
-      registrationSessionsDeleted: Number(regSessionsResult[0]?.affectedRows ?? 0),
-    };
-
-    this.logger.info(result, 'cleanup completed');
-    return result;
+    this.adapterLogger.debug(connectionOptions, 'MySQL connection pool initialized');
   }
 
   /**
    * Close the MySQL connection pool.
-   * Should be called on graceful server shutdown or after tests.
-   * Not required for serverless environments (Lambda manages lifecycle).
    */
   async close(): Promise<void> {
-    this.logger.debug('closing MySQL connection pool');
+    this.adapterLogger.debug('closing MySQL connection pool');
     await this.pool.end();
-    this.logger.debug('MySQL connection pool closed');
+    this.adapterLogger.debug('MySQL connection pool closed');
+  }
+}
+
+function createMySqlDialect(db: MySql2Database<typeof schema>): RelationalStorageDialect {
+  return {
+    name: 'MySQL',
+    sessionTtlSeconds: SESSION_TTL,
+    insertClient: async (client) => {
+      const clientId = crypto.randomUUID();
+      await db.insert(schema.clientsTable).values({
+        id: clientId,
+        ...client,
+      });
+      return clientId;
+    },
+    insertDeployment: async (clientId, deployment) => {
+      const deploymentInternalId = crypto.randomUUID();
+      await db.insert(schema.deploymentsTable).values({
+        id: deploymentInternalId,
+        clientId,
+        ...toDeploymentInsertRow(deployment),
+      });
+      return deploymentInternalId;
+    },
+    deleteClient: (clientId) => deleteMySqlClient(db, clientId),
+    requireExistingClientBeforeDelete: true,
+    insertSession: async (session, expiresAt) => {
+      const { id, ...data } = session;
+      const sessionExpiresAt =
+        expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+      await db.insert(schema.sessionsTable).values({
+        id,
+        data,
+        expiresAt: sessionExpiresAt,
+      });
+    },
+    validateNonce: (nonce) => validateMySqlNonce(db, nonce),
+    serializeDate: (date) => date,
+    setRegistrationSession: async (sessionId, session) => {
+      await db.insert(schema.registrationSessionsTable).values({
+        id: sessionId,
+        data: session,
+        expiresAt: new Date(session.expiresAt),
+      });
+    },
+    cleanup: (now) => cleanupMySql(db, now),
+  };
+}
+
+async function deleteMySqlClient(
+  db: MySql2Database<typeof schema>,
+  clientId: string,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(schema.deploymentsTable)
+      .where(eq(schema.deploymentsTable.clientId, clientId));
+    await tx.delete(schema.clientsTable).where(eq(schema.clientsTable.id, clientId));
+  });
+}
+
+function validateMySqlNonce(
+  db: MySql2Database<typeof schema>,
+  nonce: string,
+): Promise<boolean> {
+  return validateNonceSelectThenInsert(db, nonce, {
+    nonceTtlSeconds: NONCE_TTL,
+    isDuplicateKeyError: isMySqlDuplicateKey,
+    selectExistingNonce: selectExistingMySqlNonce,
+    insertNonce: insertMySqlNonce,
+  });
+}
+
+async function cleanupMySql(
+  db: MySql2Database<typeof schema>,
+  now: Date,
+): Promise<RelationalCleanupResult> {
+  const noncesResult = await db
+    .delete(schema.noncesTable)
+    .where(lt(schema.noncesTable.expiresAt, now));
+  const sessionsResult = await db
+    .delete(schema.sessionsTable)
+    .where(lt(schema.sessionsTable.expiresAt, now));
+  const registrationSessionsResult = await db
+    .delete(schema.registrationSessionsTable)
+    .where(lt(schema.registrationSessionsTable.expiresAt, now));
+
+  return {
+    noncesDeleted: getMySqlAffectedRows(noncesResult),
+    sessionsDeleted: getMySqlAffectedRows(sessionsResult),
+    registrationSessionsDeleted: getMySqlAffectedRows(registrationSessionsResult),
+  };
+}
+
+function resolveConnectionOptions(
+  config: MySqlStorageConfig,
+  logger: Logger,
+): {
+  readonly connectionLimit: number;
+  readonly isServerless: boolean;
+  readonly queueLimit: number;
+} {
+  const isServerless = isServerlessEnvironment();
+  const defaultConnectionLimit = isServerless ? 1 : 10;
+  const connectionLimit = config.poolOptions?.connectionLimit ?? defaultConnectionLimit;
+
+  if (isServerless && connectionLimit > 5) {
+    logger.warn(
+      { connectionLimit, environment: 'serverless' },
+      'High connectionLimit detected in serverless environment. Consider using 1 connection per container to avoid wasting resources.',
+    );
   }
 
-  private async getDeploymentByInternalId(
-    clientId: string,
-    deploymentInternalId: string,
-  ): Promise<LTIDeployment | undefined> {
-    const [deployment] = await this.db
-      .select()
-      .from(schema.deploymentsTable)
-      .where(
-        and(
-          eq(schema.deploymentsTable.clientId, clientId),
-          eq(schema.deploymentsTable.id, deploymentInternalId),
-        ),
-      )
-      .limit(1);
+  return {
+    connectionLimit,
+    isServerless,
+    queueLimit: config.poolOptions?.queueLimit ?? 0,
+  };
+}
 
-    return deployment === undefined ? undefined : mapDeploymentRow(deployment);
+function getMySqlAffectedRows(result: unknown): number {
+  if (!Array.isArray(result)) return 0;
+
+  const [summary] = result;
+  if (typeof summary !== 'object' || summary === null || !('affectedRows' in summary)) {
+    return 0;
   }
+
+  return Number(summary.affectedRows ?? 0);
+}
+
+function isMySqlDuplicateKey(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'ER_DUP_ENTRY'
+  );
+}
+
+async function selectExistingMySqlNonce(
+  db: MySql2Database<typeof schema>,
+  nonce: string,
+): Promise<unknown | undefined> {
+  const [existing] = await db
+    .select()
+    .from(schema.noncesTable)
+    .where(
+      and(
+        eq(schema.noncesTable.nonce, nonce),
+        gt(schema.noncesTable.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+
+  return existing;
+}
+
+function insertMySqlNonce(
+  db: MySql2Database<typeof schema>,
+  nonce: string,
+  expiresAt: Date,
+): Promise<unknown> {
+  return Promise.resolve(db.insert(schema.noncesTable).values({ nonce, expiresAt }));
 }

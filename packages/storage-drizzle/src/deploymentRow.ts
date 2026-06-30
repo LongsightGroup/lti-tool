@@ -13,12 +13,24 @@ export type DeploymentUpdateRow = {
   readonly description: string | null;
 };
 
+export type DeploymentInsertRow = DeploymentUpdateRow;
+
 export function mapDeploymentRow(row: DeploymentRow): LTIDeployment {
   return {
     id: row.id,
     deploymentId: row.deploymentId,
     name: row.name ?? undefined,
     description: row.description ?? undefined,
+  };
+}
+
+export function toDeploymentInsertRow(
+  deployment: Omit<LTIDeployment, 'id'>,
+): DeploymentInsertRow {
+  return {
+    deploymentId: deployment.deploymentId,
+    name: deployment.name ?? null,
+    description: deployment.description ?? null,
   };
 }
 

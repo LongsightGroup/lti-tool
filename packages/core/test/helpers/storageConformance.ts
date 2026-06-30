@@ -31,6 +31,10 @@ export function defineStorageConformanceSuite(
       await withStorage(factory, assertMissingDeploymentUpdateContract);
     });
 
+    it('treats missing client deletion as idempotent', async () => {
+      await withStorage(factory, assertMissingClientDeleteContract);
+    });
+
     it('atomically rejects nonce replay', async () => {
       await withStorage(factory, assertNonceReplayContract);
     });
@@ -123,6 +127,10 @@ async function assertMissingDeploymentUpdateContract(storage: LTIStorage): Promi
       name: 'Updated',
     }),
   ).rejects.toThrow('Deployment not found');
+}
+
+async function assertMissingClientDeleteContract(storage: LTIStorage): Promise<void> {
+  await expect(storage.deleteClient('missing-client')).resolves.toBeUndefined();
 }
 
 async function withStorage(

@@ -23,10 +23,8 @@ import type { Logger } from 'pino';
 
 import {
   LAUNCH_CONFIG_CACHE,
-  SESSION_CACHE,
   SESSION_TTL,
   undefinedLaunchConfigValue,
-  undefinedSessionValue,
 } from './cacheConfig.js';
 import type { DynamoBase } from './interfaces/dynamoBase.js';
 import type { DynamoDbStorageConfig } from './interfaces/dynamoDbStorageConfig.js';
@@ -36,7 +34,7 @@ import type { DynamoLTIDeployment } from './interfaces/dynamoLTIDeployment.js';
 /**
  * DynamoDB implementation of LTI storage interface.
  *
- * Stores platforms, sessions, and nonces in DynamoDB with LRU caching.
+ * Stores platforms, sessions, and nonces in DynamoDB.
  * Uses single-table design with different prefixes for different entity types.
  */
 export class DynamoDbStorage implements LTIStorage {
@@ -481,15 +479,7 @@ export class DynamoDbStorage implements LTIStorage {
 
   async getSession(sessionId: string): Promise<LTISession | undefined> {
     this.logger.debug({ sessionId }, 'getting session');
-    // Check cache first
-    const cachedSession = SESSION_CACHE.get(sessionId);
-    if (cachedSession === undefinedSessionValue) {
-      return undefined;
-    }
-    if (cachedSession) {
-      this.logger.debug({ sessionId }, 'session found in cache');
-      return cachedSession;
-    }
+
     const result = await this.ddbClient.send(
       new GetItemCommand({
         TableName: this.dataPlaneTable,
@@ -504,13 +494,10 @@ export class DynamoDbStorage implements LTIStorage {
 
     if (!result.Item) {
       this.logger.warn({ sessionId }, 'session not found');
-      SESSION_CACHE.set(sessionId, undefinedSessionValue);
       return undefined;
     }
 
-    const session = unmarshall(result.Item) as LTISession;
-    SESSION_CACHE.set(sessionId, session);
-    return session;
+    return unmarshall(result.Item) as LTISession;
   }
 
   async addSession(session: LTISession): Promise<string> {
@@ -534,8 +521,6 @@ export class DynamoDbStorage implements LTIStorage {
     );
     this.logDynamoDbResult(result, 'add session');
 
-    // Cache the session
-    SESSION_CACHE.set(session.id, session);
     this.logger.debug({ sessionId: session.id }, 'session added');
     return session.id;
   }

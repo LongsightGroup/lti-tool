@@ -9,7 +9,7 @@ import type { BaseLogger } from 'pino';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defineStorageConformanceSuite } from '../../core/test/helpers/storageConformance.js';
-import { LAUNCH_CONFIG_CACHE, SESSION_CACHE } from '../src/cacheConfig.js';
+import { LAUNCH_CONFIG_CACHE } from '../src/cacheConfig.js';
 import { DynamoDbStorage } from '../src/index.js';
 
 const mockSend = vi.hoisted(() => vi.fn());
@@ -90,7 +90,6 @@ describe('DynamoDbStorage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     LAUNCH_CONFIG_CACHE.clear();
-    SESSION_CACHE.clear();
 
     // Reset mock implementation to ensure clean state
     mockSend.mockReset();
@@ -239,15 +238,6 @@ describe('DynamoDbStorage', () => {
   });
 
   describe('getSession', () => {
-    it('returns cached session', async () => {
-      SESSION_CACHE.set('session123', mockSession);
-
-      const result = await storage.getSession('session123');
-
-      expect(result).toEqual(mockSession);
-      expect(mockSend).not.toHaveBeenCalled();
-    });
-
     it('fetches from DynamoDB', async () => {
       mockSend.mockResolvedValue({
         $metadata: { httpStatusCode: 200 },
@@ -258,6 +248,18 @@ describe('DynamoDbStorage', () => {
 
       expect(result).toEqual(expect.objectContaining({ id: 'session123' }));
     });
+
+    it('returns undefined when DynamoDB has no session item', async () => {
+      mockSend.mockResolvedValue({
+        $metadata: { httpStatusCode: 200 },
+        Item: undefined,
+      });
+
+      const result = await storage.getSession('missing-session');
+
+      expect(result).toBeUndefined();
+      expect(mockSend).toHaveBeenCalledOnce();
+    });
   });
 
   describe('addSession', () => {
@@ -267,7 +269,6 @@ describe('DynamoDbStorage', () => {
       await storage.addSession(mockSession);
 
       expect(mockSend).toHaveBeenCalledOnce();
-      expect(SESSION_CACHE.get('session123')).toEqual(mockSession);
     });
   });
 

@@ -1,0 +1,6 @@
+{
+  "name": "@longsightgroup/lti-tool-storage-relational",
+  "private": true,
+  "type": "module",
+  "description": "Internal shared relational storage implementation for SQL-backed LTI storage adapters"
+}
