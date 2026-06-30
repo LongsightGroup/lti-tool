@@ -1,8 +1,7 @@
+import type { LTIDynamicRegistrationSession } from '@longsightgroup/lti-tool';
 import { lte } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
-
-import type { LTIDynamicRegistrationSession } from '../../core/src/index.js';
 
 import {
   DEFAULT_NONCE_TTL_SECONDS,

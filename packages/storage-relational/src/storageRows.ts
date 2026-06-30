@@ -1,5 +1,3 @@
-import type { Logger } from 'pino';
-
 import {
   LTIDynamicRegistrationSessionSchema,
   LTISessionSchema,
@@ -7,7 +5,8 @@ import {
   type LTIDynamicRegistrationSession,
   type LTILaunchConfig,
   type LTISession,
-} from '../../core/src/index.js';
+} from '@longsightgroup/lti-tool';
+import type { Logger } from 'pino';
 
 export type ClientRow = Omit<LTIClient, 'deployments'>;
 

@@ -1,6 +1,3 @@
-import { and, eq, gt, type AnyColumn } from 'drizzle-orm';
-import type { Logger } from 'pino';
-
 import {
   createNoopLogger,
   type LTIClient,
@@ -9,7 +6,9 @@ import {
   type LTILaunchConfig,
   type LTISession,
   type LTIStorage,
-} from '../../core/src/index.js';
+} from '@longsightgroup/lti-tool';
+import { and, eq, gt, type AnyColumn } from 'drizzle-orm';
+import type { Logger } from 'pino';
 
 import {
   mapDeploymentRow,

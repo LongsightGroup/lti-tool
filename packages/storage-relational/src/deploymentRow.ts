@@ -1,4 +1,4 @@
-import type { LTIDeployment } from '../../core/src/index.js';
+import type { LTIDeployment } from '@longsightgroup/lti-tool';
 
 export type DeploymentRow = {
   readonly id: string;
