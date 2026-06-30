@@ -37,7 +37,7 @@ Two patterns exist today. **New code should use only the structured one.**
 | ----------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | Launch verification                             | `verifyLaunchDetailed` → `createSessionFromVerifiedLaunch` | `verifyLaunch` (throws generic `Error`)                                               |
 | LTI platform services (AGS, NRPS, registration) | `*Detailed` methods returning `LtiServiceResult<T>`        | Wrappers that throw `LtiServiceError`                                                 |
-| Launch registration                             | `upsertLaunchRegistration`                                 | Separate `addClient` + `addDeployment` unless the call site truly needs granular CRUD |
+| Launch registration (application code)          | `upsertLaunchRegistration` or dynamic registration         | `addClient` / `addDeployment` and other storage CRUD — custom admin UIs and adapters only |
 
 Expected failures belong in typed result channels (`{ success: false; error }`) with stable `code` fields. Reserve throws for programmer mistakes and for translating at HTTP/route boundaries.
 
@@ -118,4 +118,5 @@ Reject or refactor changes that:
 - [README.md](README.md) — user-facing overview and quick start
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup and PR expectations
 - [packages/core/src/interfaces/ltiStorage.ts](packages/core/src/interfaces/ltiStorage.ts) — storage contract
+- [packages/core/src/launchRegistration.ts](packages/core/src/launchRegistration.ts) — `upsertLaunchRegistration` (application registration path)
 - [packages/core/src/errors/ltiServiceError.ts](packages/core/src/errors/ltiServiceError.ts) — service result types

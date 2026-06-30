@@ -114,7 +114,25 @@ The library verifies the ID token signature against the platform JWKS, validates
 | **Session**       | The verified launch context: user, roles, course, resource link, and available LTI services. Referenced by `ltiSessionId`.               |
 | **Storage**       | Persistence for clients, deployments, sessions, nonces, and dynamic-registration state. Swap adapters without changing application code. |
 
-Register a platform manually with `addClient` and `addDeployment`, or use `upsertLaunchRegistration` to create or update everything from the values your LMS administrator gives you.
+## Registering a platform
+
+Every launch needs a stored client (platform) and deployment (tool installation). Pass the values your LMS administrator gives you in one call:
+
+```typescript
+await ltiTool.upsertLaunchRegistration({
+  name: 'Moodle Sandbox',
+  iss: 'https://sandbox.moodledemo.net',
+  clientId: 'your-client-id',
+  deploymentId: 'your-deployment-id',
+  authUrl: 'https://sandbox.moodledemo.net/mod/lti/auth.php',
+  tokenUrl: 'https://sandbox.moodledemo.net/mod/lti/token.php',
+  jwksUrl: 'https://sandbox.moodledemo.net/mod/lti/certs.php',
+});
+```
+
+`upsertLaunchRegistration` creates or updates the client and deployment, then refreshes the cached launch config used during launch verification. Call it again when endpoints or deployment metadata change.
+
+For self-service administrator registration, use dynamic registration (`initiateDynamicRegistration` / `completeDynamicRegistration`) instead of hand-copying IDs.
 
 ## Package exports
 

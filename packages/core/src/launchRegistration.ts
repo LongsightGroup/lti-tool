@@ -138,6 +138,12 @@ const launchConfigFromRegistration = (
   jwksUrl: registration.jwksUrl,
 });
 
+/**
+ * Registers or updates launch records from LMS administrator values.
+ *
+ * Upserts the client and deployment, then saves the launch config used during verification.
+ * Prefer calling this through {@link LTITool.upsertLaunchRegistration} in application code.
+ */
 export async function upsertLaunchRegistration(
   storage: LTIStorage,
   registration: LtiLaunchRegistrationInput,

@@ -154,7 +154,15 @@ const hasAgsScope = (session: LTISession, scope: string): boolean =>
  *   storage: new MemoryStorage()
  * });
  *
- * // Handle login initiation
+ * await ltiTool.upsertLaunchRegistration({
+ *   iss: 'https://platform.example.com',
+ *   clientId: 'your-client-id',
+ *   deploymentId: 'deployment123',
+ *   authUrl: 'https://platform.example.com/auth',
+ *   tokenUrl: 'https://platform.example.com/token',
+ *   jwksUrl: 'https://platform.example.com/jwks',
+ * });
+ *
  * const authUrl = await ltiTool.handleLogin({
  *   client_id: 'your-client-id',
  *   iss: 'https://platform.example.com',
@@ -1082,6 +1090,9 @@ export class LTITool {
   /**
    * Adds an LTI client platform configuration.
    *
+   * Application code should prefer {@link LTITool.upsertLaunchRegistration} or dynamic
+   * registration. Use this for custom admin UIs that manage stored client records directly.
+   *
    * @param client - Client configuration. The storage adapter generates the ID.
    * @returns Generated stored client identifier.
    */
@@ -1097,9 +1108,12 @@ export class LTITool {
   }
 
   /**
-   * Adds or updates launch registration records using platform identifiers.
+   * Registers or updates a platform for launch verification using LMS administrator values.
    *
-   * @param registration - Platform identifiers and launch endpoints.
+   * This is the recommended registration path for application code. It upserts the client
+   * and deployment, then refreshes the cached launch config used on the hot launch path.
+   *
+   * @param registration - Platform identifiers and launch endpoints from the LMS.
    * @returns Stored client, deployment, launch config, and created flags.
    */
   async upsertLaunchRegistration(
@@ -1167,6 +1181,9 @@ export class LTITool {
 
   /**
    * Adds a deployment under a stored client.
+   *
+   * Application code should prefer {@link LTITool.upsertLaunchRegistration}. Use this for
+   * custom admin UIs that manage stored deployment records directly.
    *
    * @param clientId - Stored client identifier.
    * @param deployment - Deployment configuration. The storage adapter generates the ID.

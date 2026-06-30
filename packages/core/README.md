@@ -12,7 +12,7 @@
 - **Security** - JWT verification, nonce validation, replay attack prevention
 - **Assignment and Grade Services (AGS)** - Score submission to LMS
 - **Session Management** - Secure session creation and retrieval
-- **Client Management** - Platform and deployment configuration
+- **Platform registration** - One-call launch registration via `upsertLaunchRegistration`
 
 ## Installation
 
@@ -24,6 +24,7 @@ npm install @longsightgroup/lti-tool
 
 ```typescript
 import { LTITool } from '@longsightgroup/lti-tool';
+import { MemoryStorage } from '@longsightgroup/lti-tool/storage/memory';
 
 const ltiTool = new LTITool({
   stateSecret: new TextEncoder().encode('your-secret-key'),
@@ -31,63 +32,25 @@ const ltiTool = new LTITool({
   storage: new MemoryStorage(),
 });
 
-// Configure your LMS
-const clientId = await ltiTool.addClient({
-  /* ... */
-});
-await ltiTool.addDeployment(clientId, {
-  /* ... */
+await ltiTool.upsertLaunchRegistration({
+  name: 'Moodle Sandbox',
+  iss: 'https://sandbox.moodledemo.net',
+  clientId: 'your-client-id',
+  deploymentId: 'your-deployment-id',
+  authUrl: 'https://sandbox.moodledemo.net/mod/lti/auth.php',
+  tokenUrl: 'https://sandbox.moodledemo.net/mod/lti/token.php',
+  jwksUrl: 'https://sandbox.moodledemo.net/mod/lti/certs.php',
 });
 
-// Handle LTI flow
 const authUrl = await ltiTool.handleLogin(loginParams);
-const payload = await ltiTool.verifyLaunch(idToken, state);
-const session = await ltiTool.createSession(payload);
-```
 
-When creating a session from a payload not returned directly by `verifyLaunch` on
-the same `LTITool` instance, pass the verified client ID as the second argument
-if the launch ID token contains multiple audiences.
-
-For structured verification flows, create the session from the verified launch so
-the verified client ID is carried forward automatically:
-
-```typescript
 const result = await ltiTool.verifyLaunchDetailed(idToken, state);
-
 if (result.success) {
   const session = await ltiTool.createSessionFromVerifiedLaunch(result.launch);
-} else if (result.error.code === 'launch_config_missing_jwks_endpoint') {
-  // Known client needs administrator setup before signed launches can work.
-} else if (result.error.code === 'launch_client_not_found') {
-  // Unknown issuer/client pair. Treat as an untrusted launch attempt.
 }
 ```
 
-Applications can also authorize a protocol-verified launch against their own
-registry and attach typed metadata for downstream handling:
-
-```typescript
-const result = await ltiTool.verifyLaunchDetailed(idToken, state, {
-  authorizeVerifiedLaunch: async (launch) => {
-    const installation = await registry.findInstallation({
-      issuer: launch.issuer,
-      clientId: launch.clientId,
-    });
-
-    return installation === undefined
-      ? { success: false, code: 'installation_not_authorized' }
-      : { success: true, data: installation };
-  },
-});
-
-if (result.success) {
-  const { authorization } = result.launch;
-  const session = await ltiTool.createSessionFromVerifiedLaunch(result.launch);
-} else if (result.error.code === 'verified_launch_authorization_failed') {
-  // The launch was valid LTI, but this app did not authorize the installation.
-}
-```
+Use `upsertLaunchRegistration` whenever an LMS administrator gives you issuer, client ID, deployment ID, and OIDC endpoints. For self-service registration, use dynamic registration instead.
 
 ## Persisted session JSON
 
