@@ -5,12 +5,12 @@ import type { Logger } from 'pino';
 
 import {
   RelationalStorage,
+  DEFAULT_SESSION_TTL_SECONDS,
   createMySqlDialect,
   type RelationalDatabase,
   resolveStorageLogger,
 } from '#storage/relational-storage';
 
-import { SESSION_TTL } from './cacheConfig.js';
 import * as schema from './db/schema/index.js';
 import type { MySqlStorageConfig } from './interfaces/mySqlStorageConfig.js';
 
@@ -39,7 +39,7 @@ export class MySqlStorage extends RelationalStorage {
       dialect: createMySqlDialect({
         db,
         schema,
-        sessionTtlSeconds: SESSION_TTL,
+        sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
       }),
     });
 

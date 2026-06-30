@@ -5,12 +5,12 @@ import postgres from 'postgres';
 
 import {
   RelationalStorage,
+  DEFAULT_SESSION_TTL_SECONDS,
   createPostgresDialect,
   type RelationalDatabase,
   resolveStorageLogger,
 } from '#storage/relational-storage';
 
-import { SESSION_TTL } from './cacheConfig.js';
 import * as schema from './db/schema/index.js';
 import type { PostgresStorageConfig } from './interfaces/postgresStorageConfig.js';
 
@@ -38,7 +38,7 @@ export class PostgresStorage extends RelationalStorage {
       dialect: createPostgresDialect({
         db,
         schema,
-        sessionTtlSeconds: SESSION_TTL,
+        sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
       }),
     });
 

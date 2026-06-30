@@ -5,13 +5,13 @@ import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
 import {
   RelationalStorage,
   DEFAULT_NONCE_TTL_SECONDS,
+  DEFAULT_SESSION_TTL_SECONDS,
   type RelationalDatabase,
   type RelationalCleanupResult,
   type RelationalStorageDialect,
   resolveStorageLogger,
 } from '#storage/relational-storage';
 
-import { SESSION_TTL } from './cacheConfig.js';
 import * as schema from './db/schema/index.js';
 import type { D1StorageConfig } from './interfaces/d1StorageConfig.js';
 
@@ -36,7 +36,7 @@ export class D1Storage extends RelationalStorage {
 function createD1Dialect(db: DrizzleD1Database<typeof schema>): RelationalStorageDialect {
   return {
     name: 'D1',
-    sessionTtlSeconds: SESSION_TTL,
+    sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
     nonceTtlSeconds: DEFAULT_NONCE_TTL_SECONDS,
     executeMutation: executeD1Mutation,
     claimNonce: (nonce, expiresAt) => claimD1Nonce(db, nonce, expiresAt),

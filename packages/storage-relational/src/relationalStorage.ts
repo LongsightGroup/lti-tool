@@ -105,6 +105,9 @@ export type RelationalCleanupResult = {
 /** Default nonce TTL for relational storage adapters (15 minutes). */
 export const DEFAULT_NONCE_TTL_SECONDS = 60 * 15;
 
+/** Default persisted session TTL for relational storage adapters (24 hours). */
+export const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24;
+
 export type RelationalStorageDialect = {
   readonly name: string;
   readonly sessionTtlSeconds: number;
