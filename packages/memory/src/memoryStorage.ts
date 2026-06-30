@@ -53,8 +53,10 @@ export class MemoryStorage implements LTIStorage {
   }
 
   // oxlint-disable-next-line require-await
-  async listClients(): Promise<LTIClient[]> {
-    return [...this.clients.values()];
+  async listClients(): Promise<Omit<LTIClient, 'deployments'>[]> {
+    return [...this.clients.values()].map(({ deployments: _deployments, ...client }) => {
+      return client;
+    });
   }
 
   // oxlint-disable-next-line require-await
@@ -94,7 +96,7 @@ export class MemoryStorage implements LTIStorage {
     if (client) {
       // Clean up deployments
       for (const deployment of client.deployments) {
-        const compositeKey = `${client.iss}#${client.clientId}#${deployment.id}`;
+        const compositeKey = `${client.iss}#${client.clientId}#${deployment.deploymentId}`;
         this.deployments.delete(compositeKey);
       }
       // Clean up lookup
@@ -187,11 +189,6 @@ export class MemoryStorage implements LTIStorage {
       (candidate) => candidate.id !== deploymentId,
     );
     this.deployments.delete(`${client.iss}#${client.clientId}#${existing.deploymentId}`);
-  }
-
-  // oxlint-disable-next-line require-await
-  async storeNonce(nonce: string, expiresAt: Date): Promise<void> {
-    this.logger.trace({ nonce, expiresAt }, 'nonce will be validated on use');
   }
 
   // oxlint-disable-next-line require-await

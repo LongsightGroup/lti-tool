@@ -13,14 +13,13 @@ let storage: MySqlStorage;
 let pool: mysql.Pool;
 let db: any;
 
-const testClient: Omit<LTIClient, 'id'> = {
+const testClient: Omit<LTIClient, 'id' | 'deployments'> = {
   name: 'Test Platform',
   iss: 'https://platform.example.com',
   clientId: 'test-client-123',
   authUrl: 'https://platform.example.com/auth',
   tokenUrl: 'https://platform.example.com/token',
   jwksUrl: 'https://platform.example.com/.well-known/jwks',
-  deployments: [],
 };
 
 const testDeployment: Omit<LTIDeployment, 'id'> = {
@@ -109,22 +108,6 @@ describe('MySqlStorage - Client Operations', () => {
 
     const retrieved = await storage.getClientById(clientId);
     expect(retrieved).toBeUndefined();
-  });
-});
-
-describe('MySqlStorage - Deployment Operations', () => {
-  let clientId: string;
-
-  beforeEach(async () => {
-    clientId = await storage.addClient(testClient);
-  });
-
-  it('should list deployments', async () => {
-    await storage.addDeployment(clientId, testDeployment);
-    await storage.addDeployment(clientId, { ...testDeployment, deploymentId: 'dep-2' });
-
-    const deployments = await storage.listDeployments(clientId);
-    expect(deployments.length).toBe(2);
   });
 });
 

@@ -8,6 +8,55 @@ defineStorageConformanceSuite('MemoryStorage', {
 });
 
 describe('MemoryStorage launch config', () => {
+  it('strips deployments from listClients results', async () => {
+    const storage = new MemoryStorage();
+    const clientId = await storage.addClient({
+      name: 'Test Platform',
+      iss: 'https://platform.example.com',
+      clientId: 'oauth-client-id',
+      authUrl: 'https://platform.example.com/auth',
+      tokenUrl: 'https://platform.example.com/token',
+      jwksUrl: 'https://platform.example.com/jwks',
+    });
+    await storage.addDeployment(clientId, {
+      deploymentId: 'platform-deployment-id',
+    });
+
+    await expect(storage.listClients()).resolves.toEqual([
+      {
+        id: clientId,
+        name: 'Test Platform',
+        iss: 'https://platform.example.com',
+        clientId: 'oauth-client-id',
+        authUrl: 'https://platform.example.com/auth',
+        tokenUrl: 'https://platform.example.com/token',
+        jwksUrl: 'https://platform.example.com/jwks',
+      },
+    ]);
+  });
+
+  it('clears deployment lookup entries when deleting a client', async () => {
+    const storage = new MemoryStorage();
+    const clientId = await storage.addClient({
+      name: 'Test Platform',
+      iss: 'https://platform.example.com',
+      clientId: 'oauth-client-id',
+      authUrl: 'https://platform.example.com/auth',
+      tokenUrl: 'https://platform.example.com/token',
+      jwksUrl: 'https://platform.example.com/jwks',
+    });
+    await storage.addDeployment(clientId, {
+      deploymentId: 'platform-deployment-id',
+    });
+
+    await storage.deleteClient(clientId);
+
+    await expect(
+      storage.getDeploymentByPlatformId(clientId, 'platform-deployment-id'),
+    ).resolves.toBeUndefined();
+    await expect(storage.getClientById(clientId)).resolves.toBeUndefined();
+  });
+
   it('uses the platform deployment lookup index', async () => {
     const storage = new MemoryStorage();
     const clientId = await storage.addClient({

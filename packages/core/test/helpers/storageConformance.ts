@@ -27,6 +27,10 @@ export function defineStorageConformanceSuite(
       await withStorage(factory, assertDeploymentIdContract);
     });
 
+    it('rejects updates for missing deployments', async () => {
+      await withStorage(factory, assertMissingDeploymentUpdateContract);
+    });
+
     it('atomically rejects nonce replay', async () => {
       await withStorage(factory, assertNonceReplayContract);
     });
@@ -39,6 +43,12 @@ async function assertDeploymentIdContract(storage: LTIStorage): Promise<void> {
     deploymentId: 'platform-deployment-id',
     name: 'Original Deployment',
   });
+  const otherDeploymentId = await storage.addDeployment(clientId, {
+    deploymentId: 'other-platform-deployment-id',
+    name: 'Other Deployment',
+  });
+
+  await assertDeploymentsListed(storage, clientId, deploymentId, otherDeploymentId);
 
   await expect(
     storage.getDeploymentByPlatformId(clientId, 'platform-deployment-id'),
@@ -72,11 +82,47 @@ async function assertDeploymentIdContract(storage: LTIStorage): Promise<void> {
   await expect(
     storage.getDeploymentByPlatformId(clientId, 'updated-platform-deployment-id'),
   ).resolves.toBeUndefined();
+  await expect(
+    storage.getDeploymentByPlatformId(clientId, 'other-platform-deployment-id'),
+  ).resolves.toMatchObject({
+    id: otherDeploymentId,
+    deploymentId: 'other-platform-deployment-id',
+  });
+}
+
+async function assertDeploymentsListed(
+  storage: LTIStorage,
+  clientId: string,
+  deploymentId: string,
+  otherDeploymentId: string,
+): Promise<void> {
+  await expect(storage.listDeployments(clientId)).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: deploymentId,
+        deploymentId: 'platform-deployment-id',
+      }),
+      expect.objectContaining({
+        id: otherDeploymentId,
+        deploymentId: 'other-platform-deployment-id',
+      }),
+    ]),
+  );
 }
 
 async function assertNonceReplayContract(storage: LTIStorage): Promise<void> {
   await expect(storage.validateNonce('nonce-id')).resolves.toBe(true);
   await expect(storage.validateNonce('nonce-id')).resolves.toBe(false);
+}
+
+async function assertMissingDeploymentUpdateContract(storage: LTIStorage): Promise<void> {
+  const clientId = await storage.addClient(testClient);
+
+  await expect(
+    storage.updateDeploymentById(clientId, 'missing-deployment', {
+      name: 'Updated',
+    }),
+  ).rejects.toThrow('Deployment not found');
 }
 
 async function withStorage(

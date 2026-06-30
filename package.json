@@ -65,14 +65,14 @@
     "./package.json": "./package.json"
   },
   "imports": {
-    "#storage/drizzle-deployments": {
-      "source": "./packages/storage-drizzle/src/deployments.ts",
-      "types": "./dist/packages/storage-drizzle/src/deployments.d.ts",
-      "import": "./dist/packages/storage-drizzle/src/deployments.js"
+    "#storage/drizzle-deployment-row": {
+      "source": "./packages/storage-drizzle/src/deploymentRow.ts",
+      "types": "./dist/packages/storage-drizzle/src/deploymentRow.d.ts",
+      "import": "./dist/packages/storage-drizzle/src/deploymentRow.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/write-dist-package-json.mjs",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json && node scripts/write-dist-package-json.mjs",
     "docs:build": "typedoc",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",

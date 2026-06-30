@@ -3,7 +3,7 @@
 <p align="center">Production-ready DynamoDB storage adapter for LTI 1.3. Includes caching and optimized for AWS Lambda.</p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@longsightgroup/lti-tool/storage/dynamodb"><img alt="npm" src="https://img.shields.io/npm/v/%40lti-tool%2Fdynamodb" /></a>
+  <a href="https://www.npmjs.com/package/@longsightgroup/lti-tool"><img alt="npm" src="https://img.shields.io/npm/v/%40longsightgroup%2Flti-tool" /></a>
 </p>
 
 ## Installation
@@ -70,6 +70,8 @@ Stores LMS client and deployment configurations.
 | `sk`      | String | `#` (client) or `D#<deployId>` |
 | `gsi1pk`  | String | `Type#Client` (for listing)    |
 | `gsi1sk`  | String | `#<clientId>`                  |
+| `gsi2pk`  | String | `C#<clientId>` (deployments)   |
+| `gsi2sk`  | String | `PD#<platformDeploymentId>`    |
 
 ### Data Plane Table (`lti-tool-data`)
 
@@ -156,10 +158,26 @@ resource "aws_dynamodb_table" "lti_control" {
     type = "S"
   }
 
+  attribute {
+    name = "gsi2pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "gsi2sk"
+    type = "S"
+  }
+
   global_secondary_index {
     name     = "GSI1"
     hash_key = "gsi1pk"
     range_key = "gsi1sk"
+  }
+
+  global_secondary_index {
+    name     = "GSI2"
+    hash_key = "gsi2pk"
+    range_key = "gsi2sk"
   }
 }
 

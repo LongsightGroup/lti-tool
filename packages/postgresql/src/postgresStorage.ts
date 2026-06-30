@@ -12,18 +12,9 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { Logger } from 'pino';
 import postgres from 'postgres';
 
-import {
-  createDrizzleDeploymentOps,
-  type DrizzleDeploymentOps,
-} from '#storage/drizzle-deployments';
+import { mapDeploymentRow, toDeploymentUpdateRow } from '#storage/drizzle-deployment-row';
 
-import {
-  LAUNCH_CONFIG_CACHE,
-  SESSION_CACHE,
-  SESSION_TTL,
-  undefinedLaunchConfigValue,
-  undefinedSessionValue,
-} from './cacheConfig.js';
+import { SESSION_CACHE, SESSION_TTL, undefinedSessionValue } from './cacheConfig.js';
 import * as schema from './db/schema/index.js';
 import type { PostgresStorageConfig } from './interfaces/postgresStorageConfig.js';
 
@@ -38,7 +29,6 @@ export class PostgresStorage implements LTIStorage {
   private db: PostgresJsDatabase<typeof schema>;
   private sql: postgres.Sql;
   private nonceExpirationSeconds: number;
-  private deploymentOps: DrizzleDeploymentOps;
 
   constructor(config: PostgresStorageConfig) {
     this.logger =
@@ -73,11 +63,6 @@ export class PostgresStorage implements LTIStorage {
 
     // Initialize Drizzle
     this.db = drizzle(this.sql, { schema });
-    this.deploymentOps = createDrizzleDeploymentOps({
-      db: this.db,
-      table: schema.deploymentsTable,
-      executeMutation: executePromiseMutation,
-    });
 
     this.logger.debug(
       {
@@ -118,15 +103,12 @@ export class PostgresStorage implements LTIStorage {
     };
   }
 
-  async addClient(client: Omit<LTIClient, 'id'>): Promise<string> {
+  async addClient(client: Omit<LTIClient, 'id' | 'deployments'>): Promise<string> {
     this.logger.info({ client }, 'adding client');
-
-    // Filter out deployments from client data
-    const { deployments: _clientDeployments, ...clientWithoutDeployments } = client;
 
     const [inserted] = await this.db
       .insert(schema.clientsTable)
-      .values(clientWithoutDeployments)
+      .values(client)
       .returning({ id: schema.clientsTable.id });
 
     this.logger.debug({ clientId: inserted.id }, 'client added');
@@ -135,37 +117,17 @@ export class PostgresStorage implements LTIStorage {
 
   async updateClient(
     clientId: string,
-    client: Partial<Omit<LTIClient, 'id'>>,
+    client: Partial<Omit<LTIClient, 'id' | 'deployments'>>,
   ): Promise<void> {
     this.logger.info({ clientId, client }, 'updating client');
 
-    // Get existing client to validate it exists
     const existing = await this.getClientById(clientId);
     if (!existing) throw new Error('Client not found');
 
-    // Check if launch config keys would change
-    const issuerChanged = client.iss && client.iss !== existing.iss;
-    const lmsClientIdChanged = client.clientId && client.clientId !== existing.clientId;
-
-    if (issuerChanged || lmsClientIdChanged) {
-      // Clear affected launch configs from cache
-      for (const deployment of existing.deployments) {
-        const cacheKey = `${existing.iss}#${existing.clientId}#${deployment.deploymentId}`;
-        LAUNCH_CONFIG_CACHE.delete(cacheKey);
-      }
-    }
-
-    // Filter out deployments from client data
-    const { deployments: _clientDeployments, ...clientWithoutDeployments } = client;
-
-    // Update the client
     await this.db
       .update(schema.clientsTable)
-      .set(clientWithoutDeployments)
+      .set(client)
       .where(eq(schema.clientsTable.id, clientId));
-
-    // Clear and rebuild launch config cache
-    await this.updateClientLaunchConfigs(clientId);
 
     this.logger.debug({ clientId }, 'client updated');
   }
@@ -173,17 +135,10 @@ export class PostgresStorage implements LTIStorage {
   async deleteClient(clientId: string): Promise<void> {
     this.logger.info({ clientId }, 'deleting client');
 
-    // Get client data to extract details for cache cleanup
     const existing = await this.getClientById(clientId);
     if (!existing) {
       this.logger.warn({ clientId }, 'client not found for deletion');
       return;
-    }
-
-    // Clear launch config cache
-    for (const deployment of existing.deployments) {
-      const cacheKey = `${existing.iss}#${existing.clientId}#${deployment.deploymentId}`;
-      LAUNCH_CONFIG_CACHE.delete(cacheKey);
     }
 
     // Delete client and all deployments in a transaction
@@ -204,31 +159,15 @@ export class PostgresStorage implements LTIStorage {
     this.logger.debug({ clientId }, 'client and all deployments deleted');
   }
 
-  private async updateClientLaunchConfigs(clientId: string): Promise<void> {
-    this.logger.debug({ clientId }, 'updating client launch configs');
-
-    const client = await this.getClientById(clientId);
-    if (!client) {
-      this.logger.warn({ clientId }, 'client not found for launch config update');
-      return;
-    }
-
-    // Clear cache for all deployments (configs are derived on demand)
-    for (const deployment of client.deployments) {
-      const cacheKey = `${client.iss}#${client.clientId}#${deployment.deploymentId}`;
-      LAUNCH_CONFIG_CACHE.delete(cacheKey);
-    }
-
-    this.logger.debug(
-      { clientId, count: client.deployments.length },
-      'client launch configs cache cleared',
-    );
-  }
-
   async listDeployments(clientId: string): Promise<LTIDeployment[]> {
     this.logger.debug({ clientId }, 'listing deployments for client');
 
-    const deployments = await this.deploymentOps.listDeployments(clientId);
+    const rows = await this.db
+      .select()
+      .from(schema.deploymentsTable)
+      .where(eq(schema.deploymentsTable.clientId, clientId))
+      .orderBy(schema.deploymentsTable.deploymentId, schema.deploymentsTable.id);
+    const deployments = rows.map(mapDeploymentRow);
 
     this.logger.debug({ clientId, count: deployments.length }, 'deployments found');
     return deployments;
@@ -240,10 +179,17 @@ export class PostgresStorage implements LTIStorage {
   ): Promise<LTIDeployment | undefined> {
     this.logger.debug({ clientId, deploymentId }, 'getting deployment by platform id');
 
-    const deployment = await this.deploymentOps.getDeploymentByPlatformId(
-      clientId,
-      deploymentId,
-    );
+    const [row] = await this.db
+      .select()
+      .from(schema.deploymentsTable)
+      .where(
+        and(
+          eq(schema.deploymentsTable.clientId, clientId),
+          eq(schema.deploymentsTable.deploymentId, deploymentId),
+        ),
+      )
+      .limit(1);
+    const deployment = row === undefined ? undefined : mapDeploymentRow(row);
     if (!deployment) {
       this.logger.warn({ clientId, deploymentId }, 'deployment not found');
       return undefined;
@@ -277,24 +223,19 @@ export class PostgresStorage implements LTIStorage {
   ): Promise<void> {
     this.logger.info({ clientId, deploymentId, deployment }, 'updating deployment');
 
-    const existing = await this.deploymentOps.updateDeploymentByInternalId(
-      clientId,
-      deploymentId,
-      deployment,
-    );
+    const existing = await this.getDeploymentByInternalId(clientId, deploymentId);
     if (!existing) throw new Error('Deployment not found');
 
-    // Check if LMS deployment id changed (affects launch config cache)
-    const lmsDeploymentIdChanged =
-      deployment.deploymentId && deployment.deploymentId !== existing.deploymentId;
-
-    if (lmsDeploymentIdChanged) {
-      const client = await this.getClientById(clientId);
-      if (client) {
-        const cacheKey = `${client.iss}#${client.clientId}#${existing.deploymentId}`;
-        LAUNCH_CONFIG_CACHE.delete(cacheKey);
-      }
-    }
+    const updated = { ...existing, ...deployment };
+    await this.db
+      .update(schema.deploymentsTable)
+      .set(toDeploymentUpdateRow(updated))
+      .where(
+        and(
+          eq(schema.deploymentsTable.clientId, clientId),
+          eq(schema.deploymentsTable.id, deploymentId),
+        ),
+      );
 
     this.logger.debug({ deploymentId }, 'deployment updated');
   }
@@ -302,28 +243,22 @@ export class PostgresStorage implements LTIStorage {
   async deleteDeploymentById(clientId: string, deploymentId: string): Promise<void> {
     this.logger.info({ clientId, deploymentId }, 'deleting deployment');
 
-    const existing = await this.deploymentOps.deleteDeploymentByInternalId(
-      clientId,
-      deploymentId,
-    );
+    const existing = await this.getDeploymentByInternalId(clientId, deploymentId);
     if (!existing) {
       this.logger.warn({ clientId, deploymentId }, 'deployment not found for deletion');
       return;
     }
 
-    const client = await this.getClientById(clientId);
-    if (client) {
-      const cacheKey = `${client.iss}#${client.clientId}#${existing.deploymentId}`;
-      LAUNCH_CONFIG_CACHE.delete(cacheKey);
-    }
+    await this.db
+      .delete(schema.deploymentsTable)
+      .where(
+        and(
+          eq(schema.deploymentsTable.clientId, clientId),
+          eq(schema.deploymentsTable.id, deploymentId),
+        ),
+      );
 
     this.logger.debug({ clientId, deploymentId }, 'deployment deleted');
-  }
-
-  // oxlint-disable-next-line no-unused-vars require-await
-  async storeNonce(nonce: string, expiresAt: Date): Promise<void> {
-    // Noop - the real work happens in validateNonce
-    this.logger.trace({ nonce, expiresAt }, 'nonce will be validated on use');
   }
 
   async validateNonce(nonce: string): Promise<boolean> {
@@ -429,17 +364,6 @@ export class PostgresStorage implements LTIStorage {
   ): Promise<LTILaunchConfig | undefined> {
     this.logger.debug({ iss, clientId, deploymentId }, 'getting launch config');
 
-    // Check cache
-    const cacheKey = `${iss}#${clientId}#${deploymentId}`;
-    const cachedConfig = LAUNCH_CONFIG_CACHE.get(cacheKey);
-    if (cachedConfig === undefinedLaunchConfigValue) {
-      return undefined;
-    }
-    if (cachedConfig) {
-      this.logger.debug({ cachedConfig }, 'launch config found in cache');
-      return cachedConfig;
-    }
-
     // Query for client and deployment
     const [result] = await this.db
       .select({
@@ -468,11 +392,10 @@ export class PostgresStorage implements LTIStorage {
       }
 
       this.logger.warn({ iss, clientId, deploymentId }, 'launch config not found');
-      LAUNCH_CONFIG_CACHE.set(cacheKey, undefinedLaunchConfigValue);
       return undefined;
     }
 
-    const launchConfig: LTILaunchConfig = {
+    return {
       iss: result.client.iss,
       clientId: result.client.clientId,
       deploymentId: result.deployment.deploymentId,
@@ -480,9 +403,6 @@ export class PostgresStorage implements LTIStorage {
       tokenUrl: result.client.tokenUrl,
       jwksUrl: result.client.jwksUrl,
     };
-
-    LAUNCH_CONFIG_CACHE.set(cacheKey, launchConfig);
-    return launchConfig;
   }
 
   // oxlint-disable-next-line require-await no-unused-vars
@@ -599,8 +519,22 @@ export class PostgresStorage implements LTIStorage {
     await this.sql.end();
     this.logger.debug('PostgreSQL connection pool closed');
   }
-}
 
-async function executePromiseMutation(query: unknown): Promise<void> {
-  await Promise.resolve(query);
+  private async getDeploymentByInternalId(
+    clientId: string,
+    deploymentInternalId: string,
+  ): Promise<LTIDeployment | undefined> {
+    const [deployment] = await this.db
+      .select()
+      .from(schema.deploymentsTable)
+      .where(
+        and(
+          eq(schema.deploymentsTable.clientId, clientId),
+          eq(schema.deploymentsTable.id, deploymentInternalId),
+        ),
+      )
+      .limit(1);
+
+    return deployment === undefined ? undefined : mapDeploymentRow(deployment);
+  }
 }

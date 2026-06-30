@@ -12,12 +12,5 @@
     "customConditions": ["source"],
     "lib": ["ES2024", "WebWorker", "DOM", "DOM.Iterable"]
   },
-  "include": ["packages/*/src/**/*", "packages/*/test/**/*.ts"],
-  "angularCompilerOptions": {
-    "enableI18nLegacyMessageIdFormat": false,
-    "strictInjectionParameters": true,
-    "strictInputAccessModifiers": true,
-    "typeCheckHostBindings": true,
-    "strictTemplates": true
-  }
+  "include": ["packages/*/src/**/*", "packages/*/test/**/*.ts"]
 }

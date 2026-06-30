@@ -111,6 +111,36 @@ describe('DynamoDbStorage', () => {
     },
   });
 
+  describe('getDeploymentByPlatformId', () => {
+    it('queries the platform deployment lookup index directly', async () => {
+      mockSend.mockResolvedValue({
+        ...dynamoOk(),
+        Items: [
+          marshall({
+            pk: 'C#client-uuid-123',
+            sk: 'D#deployment',
+            gsi2pk: 'C#client-uuid-123',
+            gsi2sk: 'PD#deployment1',
+            type: 'Deployment',
+            id: 'deployment',
+            deploymentId: 'deployment1',
+          }),
+        ],
+      });
+
+      const result = await storage.getDeploymentByPlatformId(
+        'client-uuid-123',
+        'deployment1',
+      );
+
+      expect(result).toMatchObject({
+        id: 'deployment',
+        deploymentId: 'deployment1',
+      });
+      expect(commandInput(mockSend.mock.calls[0]?.[0]).IndexName).toBe('GSI2');
+    });
+  });
+
   describe('getClientById', () => {
     it('fetches from DynamoDB when not cached', async () => {
       mockSend.mockResolvedValue({
@@ -318,6 +348,20 @@ function createDynamoConformanceMock(): (command: unknown) => unknown {
 
     if (input.KeyConditionExpression !== undefined) {
       if (input.TableName === 'controlPlane') {
+        if (input.IndexName === 'GSI2') {
+          const expressionValues = input.ExpressionAttributeValues ?? {};
+          const pk = attributeString(expressionValues[':gsi2pk']);
+          const gsi2sk = attributeString(expressionValues[':gsi2sk']);
+          const deployment = [...(deployments.get(pk)?.values() ?? [])].find(
+            (item) => item.gsi2sk === gsi2sk,
+          );
+
+          return {
+            ...dynamoOk(),
+            Items: deployment === undefined ? [] : [marshall(deployment)],
+          };
+        }
+
         const expressionValues = input.ExpressionAttributeValues ?? {};
         const pk = attributeString(expressionValues[':pk']);
         const clientId = pk.replace(/^C#/, '');
@@ -366,6 +410,7 @@ type DynamoCommandInput = {
   readonly Key?: Record<string, AttributeValue>;
   readonly ExpressionAttributeValues?: Record<string, AttributeValue>;
   readonly KeyConditionExpression?: string;
+  readonly IndexName?: string;
 };
 
 function commandInput(command: unknown): DynamoCommandInput {

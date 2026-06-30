@@ -160,7 +160,6 @@ const upsertLaunchRegistrationDeployment = async (
   registration: LtiLaunchRegistrationInput,
 ): Promise<{
   deployment: LTIDeployment;
-  deployments: LTIDeployment[];
   createdDeployment: boolean;
 }> => {
   const existingDeployment = await storage.getDeploymentByPlatformId(
@@ -170,20 +169,16 @@ const upsertLaunchRegistrationDeployment = async (
   const deploymentInput = launchRegistrationDeploymentInput(registration);
 
   if (existingDeployment === undefined) {
-    const deployments = await storage.listDeployments(clientId);
-    const deployment = {
-      id: await storage.addDeployment(clientId, deploymentInput),
-      ...deploymentInput,
-    };
     return {
-      deployment,
-      deployments: [...deployments, deployment],
+      deployment: {
+        id: await storage.addDeployment(clientId, deploymentInput),
+        ...deploymentInput,
+      },
       createdDeployment: true,
     };
   }
 
   const deployment = { ...existingDeployment, ...deploymentInput };
-  const deployments = await storage.listDeployments(clientId);
 
   if (
     registration.deploymentName !== undefined ||
@@ -194,9 +189,6 @@ const upsertLaunchRegistrationDeployment = async (
 
   return {
     deployment,
-    deployments: deployments.map((candidate) =>
-      candidate.id === deployment.id ? deployment : candidate,
-    ),
     createdDeployment: false,
   };
 };
@@ -1257,12 +1249,12 @@ export class LTITool {
         this.config.storage,
         registration,
       );
-      const { deployment, deployments, createdDeployment } =
-        await upsertLaunchRegistrationDeployment(
-          this.config.storage,
-          client.id,
-          registration,
-        );
+      const { deployment, createdDeployment } = await upsertLaunchRegistrationDeployment(
+        this.config.storage,
+        client.id,
+        registration,
+      );
+      const deployments = await this.config.storage.listDeployments(client.id);
       const launchConfig = launchConfigFromRegistration(registration);
       await this.config.storage.saveLaunchConfig(launchConfig);
 

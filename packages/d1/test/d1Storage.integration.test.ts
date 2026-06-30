@@ -128,25 +128,6 @@ describe('D1Storage with Miniflare D1', () => {
     });
   });
 
-  describe('deployment operations', () => {
-    it('enforces one platform deployment ID per client in the local D1 schema', async () => {
-      const clientInternalId = await harness.storage<string>('addClient', testClient);
-      await harness.storage('addDeployment', clientInternalId, testDeployment);
-
-      await expect(
-        harness.storage('addDeployment', clientInternalId, testDeployment),
-      ).rejects.toThrow('Failed query');
-    });
-
-    it('throws when updating a missing deployment', async () => {
-      await expect(
-        harness.storage('updateDeploymentById', 'missing-client', 'missing-deployment', {
-          name: 'Updated',
-        }),
-      ).rejects.toThrow('Deployment not found');
-    });
-  });
-
   describe('session operations', () => {
     it('stores and retrieves active sessions', async () => {
       await harness.storage('addSession', testSession);
