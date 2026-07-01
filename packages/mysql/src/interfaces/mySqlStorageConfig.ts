@@ -1,5 +1,5 @@
-import type { Logger } from 'pino';
 import type mysql from 'mysql2/promise';
+import type { Logger } from 'pino';
 
 export interface MySqlStorageConfig {
   logger?: Logger;
