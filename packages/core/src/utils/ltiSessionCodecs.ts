@@ -17,8 +17,11 @@ export function serializeLtiSession(session: LTISession): string {
 }
 
 export function parsePersistedLtiSession(dataJson: string): LTISession | undefined {
-  const parsedJson = parseJson(dataJson);
-  const parsedSession = LTISessionSchema.safeParse(parsedJson);
+  return parsePersistedLtiSessionValue(parseJson(dataJson));
+}
+
+export function parsePersistedLtiSessionValue(value: unknown): LTISession | undefined {
+  const parsedSession = LTISessionSchema.safeParse(value);
 
   return parsedSession.success ? parsedSession.data : undefined;
 }
@@ -32,8 +35,13 @@ export function serializeLtiDynamicRegistrationSession(
 export function parsePersistedLtiDynamicRegistrationSession(
   dataJson: string,
 ): LTIDynamicRegistrationSession | undefined {
-  const parsedJson = parseJson(dataJson);
-  const parsedSession = LTIDynamicRegistrationSessionSchema.safeParse(parsedJson);
+  return parsePersistedLtiDynamicRegistrationSessionValue(parseJson(dataJson));
+}
+
+export function parsePersistedLtiDynamicRegistrationSessionValue(
+  value: unknown,
+): LTIDynamicRegistrationSession | undefined {
+  const parsedSession = LTIDynamicRegistrationSessionSchema.safeParse(value);
 
   return parsedSession.success ? parsedSession.data : undefined;
 }

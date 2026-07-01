@@ -13,6 +13,8 @@ import {
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   createNoopLogger,
+  parsePersistedLtiDynamicRegistrationSessionValue,
+  parsePersistedLtiSessionValue,
   type LTIClient,
   type LTIDeployment,
   type LTIDynamicRegistrationSession,
@@ -84,7 +86,7 @@ export class DynamoDbStorage implements LTIStorage {
       if (result.Items?.length) {
         for (const item of result.Items) {
           const clientRecord = unmarshall(item) as DynamoLTIClient;
-          clients.push(clientRecord);
+          clients.push(this.cleanClientRecord(clientRecord));
         }
       }
 
@@ -339,6 +341,10 @@ export class DynamoDbStorage implements LTIStorage {
     deployment: Omit<LTIDeployment, 'id'>,
   ): Promise<string> {
     this.logger.info({ clientId, deployment }, 'adding deployment');
+    if ((await this.getClientById(clientId)) === undefined) {
+      throw new Error('Client not found');
+    }
+
     const deploymentInternalId = crypto.randomUUID(); // generate stable id
 
     const pk = this.createClientPK(clientId);
@@ -491,7 +497,7 @@ export class DynamoDbStorage implements LTIStorage {
       return undefined;
     }
 
-    return unmarshall(result.Item) as LTISession;
+    return this.cleanSessionRecord(unmarshall(result.Item));
   }
 
   async addSession(session: LTISession): Promise<string> {
@@ -634,7 +640,8 @@ export class DynamoDbStorage implements LTIStorage {
       return undefined;
     }
 
-    const session = unmarshall(result.Item) as LTIDynamicRegistrationSession;
+    const session = this.cleanRegistrationSessionRecord(unmarshall(result.Item));
+    if (!session) return undefined;
 
     // Check if expired (additional safety check beyond DynamoDB TTL)
     if (session.expiresAt < Date.now()) {
@@ -821,9 +828,10 @@ export class DynamoDbStorage implements LTIStorage {
       const unmarshalled = unmarshall(item) as DynamoBase;
       switch (unmarshalled.type) {
         case 'Client': {
-          // oxlint-disable-next-line no-unused-vars
-          const { pk, sk, type, ...cleanClient } = unmarshalled as DynamoLTIClient;
-          clientRecord = cleanClient as LTIClient;
+          clientRecord = {
+            ...this.cleanClientRecord(unmarshalled as DynamoLTIClient),
+            deployments: [],
+          };
           break;
         }
         case 'Deployment': {
@@ -844,9 +852,40 @@ export class DynamoDbStorage implements LTIStorage {
   }
 
   private cleanDeploymentRecord(deployment: DynamoLTIDeployment): LTIDeployment {
-    // oxlint-disable-next-line no-unused-vars
-    const { pk, sk, gsi2pk, gsi2sk, type, ...cleanDeployment } = deployment;
+    const {
+      pk: _pk,
+      sk: _sk,
+      gsi2pk: _gsi2pk,
+      gsi2sk: _gsi2sk,
+      type: _type,
+      ...cleanDeployment
+    } = deployment;
     return cleanDeployment;
+  }
+
+  private cleanClientRecord(client: DynamoLTIClient): Omit<LTIClient, 'deployments'> {
+    const { id, name, iss, clientId, authUrl, tokenUrl, jwksUrl } = client;
+    return { id, name, iss, clientId, authUrl, tokenUrl, jwksUrl };
+  }
+
+  private cleanSessionRecord(record: Record<string, unknown>): LTISession | undefined {
+    const parsed = parsePersistedLtiSessionValue(stripDynamoDataPlaneKeys(record));
+    if (!parsed) {
+      this.logger.warn('invalid persisted session data');
+    }
+    return parsed;
+  }
+
+  private cleanRegistrationSessionRecord(
+    record: Record<string, unknown>,
+  ): LTIDynamicRegistrationSession | undefined {
+    const parsed = parsePersistedLtiDynamicRegistrationSessionValue(
+      stripDynamoDataPlaneKeys(record),
+    );
+    if (!parsed) {
+      this.logger.warn('invalid persisted registration session data');
+    }
+    return parsed;
   }
 
   private async buildLtiLaunchConfig(
@@ -871,4 +910,11 @@ export class DynamoDbStorage implements LTIStorage {
       tokenUrl: client.tokenUrl,
     };
   }
+}
+
+function stripDynamoDataPlaneKeys<T extends Record<string, unknown>>(
+  record: T,
+): Omit<T, 'pk' | 'sk' | 'ttl'> {
+  const { pk: _pk, sk: _sk, ttl: _ttl, ...rest } = record;
+  return rest;
 }

@@ -12,7 +12,9 @@ import {
   LTI_ROLE_CONTEXT_LEARNER,
   LTI_VERSION_1P3P0,
   parsePersistedLtiDynamicRegistrationSession,
+  parsePersistedLtiDynamicRegistrationSessionValue,
   parsePersistedLtiSession,
+  parsePersistedLtiSessionValue,
   serializeLtiDynamicRegistrationSession,
   serializeLtiSession,
   type LTI13JwtPayload,
@@ -77,6 +79,13 @@ describe('LTI session JSON codecs', () => {
     ).toBeUndefined();
   });
 
+  it('parses launch sessions from in-memory values', () => {
+    const session = createSession(sampleLaunchPayload());
+
+    expect(parsePersistedLtiSessionValue(session)).toEqual(session);
+    expect(parsePersistedLtiSessionValue({ id: 'session-123' })).toBeUndefined();
+  });
+
   it('round-trips persisted dynamic registration sessions', () => {
     const session = sampleDynamicRegistrationSession();
     const dataJson = serializeLtiDynamicRegistrationSession(session);
@@ -88,6 +97,15 @@ describe('LTI session JSON codecs', () => {
     expect(parsePersistedLtiDynamicRegistrationSession('{not-json')).toBeUndefined();
     expect(
       parsePersistedLtiDynamicRegistrationSession(JSON.stringify({ expiresAt: 'soon' })),
+    ).toBeUndefined();
+  });
+
+  it('parses dynamic registration sessions from in-memory values', () => {
+    const session = sampleDynamicRegistrationSession();
+
+    expect(parsePersistedLtiDynamicRegistrationSessionValue(session)).toEqual(session);
+    expect(
+      parsePersistedLtiDynamicRegistrationSessionValue({ expiresAt: 'soon' }),
     ).toBeUndefined();
   });
 });

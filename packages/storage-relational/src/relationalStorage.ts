@@ -265,6 +265,17 @@ export class RelationalStorage implements LTIStorage {
   ): Promise<string> {
     this.logger.info({ clientId, deployment }, 'adding deployment');
 
+    return this.addDeploymentToExistingClient(clientId, deployment);
+  }
+
+  private async addDeploymentToExistingClient(
+    clientId: string,
+    deployment: Omit<LTIDeployment, 'id'>,
+  ): Promise<string> {
+    if (!(await this.clientExists(clientId))) {
+      throw new Error('Client not found');
+    }
+
     const deploymentInternalId = crypto.randomUUID();
     return this.insertDeployment(deploymentInternalId, clientId, deployment);
   }

@@ -94,7 +94,9 @@ export {
 } from './utils/ltiToolKeyPair.js';
 export {
   parsePersistedLtiDynamicRegistrationSession,
+  parsePersistedLtiDynamicRegistrationSessionValue,
   parsePersistedLtiSession,
+  parsePersistedLtiSessionValue,
   serializeLtiDynamicRegistrationSession,
   serializeLtiSession,
 } from './utils/ltiSessionCodecs.js';

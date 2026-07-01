@@ -80,8 +80,36 @@ export class MemoryStorage implements LTIStorage {
     clientId: string,
     client: Partial<Omit<LTIClient, 'id' | 'deployments'>>,
   ): Promise<void> {
-    // does nothing; in production we support updates
-    this.logger.warn({ clientId, client }, 'updateClient not implemented');
+    const existing = this.clients.get(clientId);
+    if (!existing) {
+      throw new Error('Client not found');
+    }
+
+    this.clientLookup.delete(`${existing.iss}#${existing.clientId}`);
+
+    const updated = { ...existing, ...client, id: existing.id };
+    this.clients.set(clientId, updated);
+    this.clientLookup.set(`${updated.iss}#${updated.clientId}`, clientId);
+
+    if (client.iss !== undefined || client.clientId !== undefined) {
+      this.reindexDeployments(updated, existing.iss, existing.clientId);
+    }
+  }
+
+  private reindexDeployments(
+    client: LTIClient,
+    previousIss: string,
+    previousClientId: string,
+  ): void {
+    for (const deployment of client.deployments) {
+      this.deployments.delete(
+        `${previousIss}#${previousClientId}#${deployment.deploymentId}`,
+      );
+      this.deployments.set(
+        `${client.iss}#${client.clientId}#${deployment.deploymentId}`,
+        deployment,
+      );
+    }
   }
 
   // oxlint-disable-next-line require-await
@@ -103,7 +131,7 @@ export class MemoryStorage implements LTIStorage {
   async listDeployments(clientId: string): Promise<LTIDeployment[]> {
     const client = this.clients.get(clientId);
     if (!client) {
-      throw new Error(`Client not found: ${clientId}`);
+      return [];
     }
     return client.deployments;
   }
