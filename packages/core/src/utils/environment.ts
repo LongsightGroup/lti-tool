@@ -1,33 +1,43 @@
+const SERVERLESS_ENV_KEYS = [
+  'AWS_LAMBDA_FUNCTION_NAME',
+  'AWS_EXECUTION_ENV',
+  'LAMBDA_TASK_ROOT',
+  'FUNCTION_NAME',
+  'FUNCTION_TARGET',
+  'K_SERVICE',
+  'FUNCTIONS_WORKER_RUNTIME',
+  'AZURE_FUNCTIONS_ENVIRONMENT',
+  'VERCEL',
+  'NETLIFY',
+] as const;
+
 /**
- * Detects if the application is running in a serverless environment.
+ * Detects whether the application is running in a known serverless environment.
  *
- * Checks for environment variables commonly set by serverless platforms:
- * - AWS Lambda: AWS_LAMBDA_FUNCTION_NAME, AWS_EXECUTION_ENV, LAMBDA_TASK_ROOT
- * - Google Cloud Functions/Run: FUNCTION_NAME, FUNCTION_TARGET, K_SERVICE
- * - Azure Functions: FUNCTIONS_WORKER_RUNTIME, AZURE_FUNCTIONS_ENVIRONMENT
- * - Vercel: VERCEL, VERCEL_ENV
- * - Netlify Functions: NETLIFY
- *
- * @returns true if serverless environment detected, false otherwise
+ * The package is not Node-only, so this checks for an optional `process.env`
+ * object at runtime without depending on Node ambient types. Runtimes such as
+ * Cloudflare Workers that do not expose `process` simply return false.
  */
 export function isServerlessEnvironment(): boolean {
-  return !!(
-    // AWS Lambda
-    (
-      process.env.AWS_LAMBDA_FUNCTION_NAME ||
-      process.env.AWS_EXECUTION_ENV ||
-      process.env.LAMBDA_TASK_ROOT ||
-      // Google Cloud Functions / Cloud Run
-      process.env.FUNCTION_NAME ||
-      process.env.FUNCTION_TARGET ||
-      process.env.K_SERVICE ||
-      // Azure Functions
-      process.env.FUNCTIONS_WORKER_RUNTIME ||
-      process.env.AZURE_FUNCTIONS_ENVIRONMENT ||
-      // Vercel
-      process.env.VERCEL ||
-      // Netlify Functions
-      process.env.NETLIFY
-    )
-  );
+  const env = getRuntimeProcessEnv();
+  if (env === undefined) return false;
+
+  return SERVERLESS_ENV_KEYS.some((key) => hasEnvValue(env, key));
+}
+
+function getRuntimeProcessEnv(): object | undefined {
+  const processValue: unknown = Reflect.get(globalThis, 'process');
+  if (!isObject(processValue)) return undefined;
+
+  const envValue: unknown = Reflect.get(processValue, 'env');
+  return isObject(envValue) ? envValue : undefined;
+}
+
+function hasEnvValue(env: object, key: string): boolean {
+  const value: unknown = Reflect.get(env, key);
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isObject(value: unknown): value is object {
+  return typeof value === 'object' && value !== null;
 }
