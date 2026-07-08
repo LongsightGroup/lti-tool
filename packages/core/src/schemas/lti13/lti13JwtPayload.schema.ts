@@ -45,11 +45,13 @@ const LTI13JwtPayloadBaseSchema = BaseJwtClaimsSchema.extend(PrivacyClaimsSchema
   });
 
 const LTI13ResourceLinkJwtPayloadSchema = LTI13JwtPayloadBaseSchema.extend({
-  sub: z.string(),
   [LTI_CLAIM_MESSAGE_TYPE]: z.literal(LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST),
 });
 
-const LTI13DeepLinkingJwtPayloadSchema = LTI13JwtPayloadBaseSchema.extend({
+const LTI13DeepLinkingJwtPayloadSchema = LTI13JwtPayloadBaseSchema.omit({
+  sub: true,
+}).extend({
+  sub: z.string().optional(),
   [LTI_CLAIM_MESSAGE_TYPE]: z.literal(LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST),
 });
 

@@ -35,6 +35,7 @@ import {
 import { LineItemSchema } from '../src/schemas/lti13/ags/lineItem.schema.js';
 import { ResultSchema } from '../src/schemas/lti13/ags/result.schema.js';
 import { ScoreSubmissionSchema } from '../src/schemas/lti13/ags/scoreSubmission.schema.js';
+import { BaseJwtClaimsSchema } from '../src/schemas/lti13/claims/baseJwtClaims.schema.js';
 import { CoreLtiClaimsSchema } from '../src/schemas/lti13/claims/coreLtiClaims.schema.js';
 import { openIDConfigurationSchema } from '../src/schemas/lti13/dynamicRegistration/openIDConfiguration.schema.js';
 import { RegistrationResponseSchema } from '../src/schemas/lti13/dynamicRegistration/registrationResponse.schema.js';
@@ -356,6 +357,18 @@ describe('Schema Validation Tests', () => {
   });
 
   describe('LTI13JwtPayloadSchema', () => {
+    it('requires subjects in base JWT claims', () => {
+      expect(() =>
+        BaseJwtClaimsSchema.parse({
+          iss: 'https://platform.example.com',
+          aud: 'client123',
+          exp: Math.floor(Date.now() / 1000) + 300,
+          iat: Math.floor(Date.now() / 1000),
+          nonce: 'test-nonce',
+        }),
+      ).toThrow();
+    });
+
     it('validates complete LTI 1.3 JWT payload', () => {
       const validPayload = {
         iss: 'https://platform.example.com',
