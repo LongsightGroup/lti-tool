@@ -13,6 +13,7 @@
 - Derive the `createLtiResourceLinkContentItem` input from the LTI Resource Link schema and preserve extension properties through the builder.
 - Centralize optional-property projection in Deep Linking/session capability helpers.
 - Keep base JWT subjects required and make subject optional only for Deep Linking launch payloads.
+- Narrow `LTISession.jwtPayload` to the parsed `LTI13JwtPayload` discriminated union.
 
 ## 0.1.3
 

@@ -4,6 +4,12 @@ import {
   LTI_AGS_SCOPE_LINEITEM_READONLY,
   LTI_AGS_SCOPE_RESULT_READONLY,
   LTI_AGS_SCOPE_SCORE,
+  LTI_CLAIM_DEPLOYMENT_ID,
+  LTI_CLAIM_MESSAGE_TYPE,
+  LTI_CLAIM_TARGET_LINK_URI,
+  LTI_CLAIM_VERSION,
+  LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST,
+  LTI_VERSION_1P3P0,
 } from '../src/constants.js';
 import type { LtiServiceError } from '../src/errors/ltiServiceError.js';
 import type { LTISession, LTIStorage } from '../src/interfaces/index.js';
@@ -63,7 +69,18 @@ const mockStorage: LTIStorage = {
 
 const mockSession: LTISession = {
   id: 'session123',
-  jwtPayload: {},
+  jwtPayload: {
+    iss: 'https://platform.example.com',
+    aud: 'client123',
+    sub: 'user123',
+    exp: Math.floor(Date.now() / 1000) + 300,
+    iat: Math.floor(Date.now() / 1000),
+    nonce: 'test-nonce',
+    [LTI_CLAIM_MESSAGE_TYPE]: LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST,
+    [LTI_CLAIM_VERSION]: LTI_VERSION_1P3P0,
+    [LTI_CLAIM_DEPLOYMENT_ID]: 'deployment1',
+    [LTI_CLAIM_TARGET_LINK_URI]: 'https://tool.example.com/launch',
+  },
   user: { id: 'user123', roles: ['student'] },
   context: { id: 'context123', label: 'TEST', title: 'Test Course' },
   platform: {

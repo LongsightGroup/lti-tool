@@ -1054,8 +1054,8 @@ describe('LTI Integration Tests', () => {
     });
 
     it('rejects LTI launch JWT without deployment_id claim', async () => {
-      const ltiPayload = createMockLTIPayload();
-      delete ltiPayload[LTI_CLAIM_DEPLOYMENT_ID];
+      const { [LTI_CLAIM_DEPLOYMENT_ID]: _deploymentId, ...ltiPayload } =
+        createMockLTIPayload();
 
       const { SignJWT } = await import('jose');
       const jwt = await new SignJWT(ltiPayload)

@@ -1,5 +1,4 @@
-import type { JWTPayload } from 'jose';
-
+import type { LTI13JwtPayload } from '../schemas/lti13/lti13JwtPayload.schema.js';
 import type { LtiDeepLinkingSettings } from '../schemas/ltiDeepLinkingSettings.schema.js';
 
 /**
@@ -7,8 +6,8 @@ import type { LtiDeepLinkingSettings } from '../schemas/ltiDeepLinkingSettings.s
  * and available services after successful launch verification.
  */
 export interface LTISession {
-  /** Original JWT payload from the platform for reference */
-  jwtPayload: JWTPayload;
+  /** Parsed LTI 1.3 JWT payload from the platform for reference */
+  jwtPayload: LTI13JwtPayload;
 
   /** Unique session identifier (UUID) */
   id: string;
