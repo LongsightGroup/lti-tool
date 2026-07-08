@@ -11,6 +11,9 @@ import {
   type LtiServiceKind,
   type LtiServiceResult,
   type LtiVerifiedLaunch,
+  type Member,
+  type NrpsGetMembersOptions,
+  type NrpsMembersResult,
   type ScoreSubmission,
   type UpdateLineItem,
 } from '@longsightgroup/lti-tool';
@@ -80,6 +83,20 @@ export function createTestServiceError(
   });
 }
 
+function fakeGetMembers(): Promise<LtiServiceResult<Member[]>>;
+function fakeGetMembers(options: {
+  readonly followPagination?: false | undefined;
+}): Promise<LtiServiceResult<Member[]>>;
+function fakeGetMembers(options: {
+  readonly followPagination: true;
+  readonly maxPages?: number;
+}): Promise<LtiServiceResult<NrpsMembersResult>>;
+function fakeGetMembers(
+  _options: NrpsGetMembersOptions = {},
+): Promise<LtiServiceResult<unknown>> {
+  return Promise.resolve(unavailable('nrps', 'getMembers'));
+}
+
 /**
  * Builds a fake session-bound Advantage client for app tests.
  */
@@ -98,7 +115,10 @@ export function createFakeLtiAdvantage(
     updateLineItem: (_updateLineItem: UpdateLineItem) =>
       Promise.resolve(unavailable('ags', 'updateLineItem')),
     deleteLineItem: () => Promise.resolve(unavailable('ags', 'deleteLineItem')),
-    getMembers: () => Promise.resolve(unavailable('nrps', 'getMembers')),
+    findOrCreateLineItem: (_input) =>
+      Promise.resolve(unavailable('ags', 'findOrCreateLineItem')),
+    getMembers: fakeGetMembers,
+    getMembersPage: (_pageUrl) => Promise.resolve(unavailable('nrps', 'getMembersPage')),
     createDeepLinkingResponse: (_contentItems: DeepLinkingContentItem[]) =>
       Promise.resolve(unavailable('deep_linking', 'createDeepLinkingResponse')),
     createDeepLinkingHtmlResponse: (_contentItems: DeepLinkingContentItem[]) =>

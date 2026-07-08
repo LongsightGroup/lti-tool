@@ -94,10 +94,10 @@ const lineItem = {
   scoreMaximum: 10,
 };
 
-const createLineItem: CreateLineItem = {
+const createLineItem = {
   label: 'Quiz 1',
   scoreMaximum: 10,
-};
+} satisfies CreateLineItem;
 
 const results = [
   {
@@ -445,6 +445,271 @@ describe('LTI service results', () => {
       serviceKind: 'nrps',
       operation: 'getMembers',
     });
+  });
+
+  it('returns one NRPS page with parsed Link headers', async () => {
+    const response = Response.json(
+      {
+        id: 'https://platform.example.com/nrps/members',
+        context: { id: 'course-1' },
+        members: [
+          {
+            status: 'Active',
+            name: 'Ada Lovelace',
+            user_id: 'user-1',
+            roles: [],
+          },
+        ],
+      },
+      {
+        headers: {
+          Link: '<https://platform.example.com/nrps/page-2>; rel="next", <https://platform.example.com/nrps/diff>; rel="differences"',
+        },
+      },
+    );
+    recordFetch([tokenResponse(), response]);
+    const advantage = ltiTool.createAdvantage(session);
+
+    const result = await advantage.getMembersPage();
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected NRPS page success');
+    expect(result.data.members).toEqual([
+      {
+        status: 'Active',
+        name: 'Ada Lovelace',
+        userId: 'user-1',
+        roles: [],
+      },
+    ]);
+    expect(result.data.nextUrl).toBe('https://platform.example.com/nrps/page-2');
+    expect(result.data.differencesUrl).toBe('https://platform.example.com/nrps/diff');
+  });
+
+  it('follows NRPS pagination when requested', async () => {
+    const pageOne = Response.json(
+      {
+        id: 'https://platform.example.com/nrps/members',
+        context: { id: 'course-1' },
+        members: [
+          {
+            status: 'Active',
+            name: 'Ada Lovelace',
+            user_id: 'user-1',
+            roles: [],
+          },
+        ],
+      },
+      {
+        headers: {
+          Link: '<https://platform.example.com/nrps/page-2>; rel="next"',
+        },
+      },
+    );
+    const pageTwo = Response.json({
+      id: 'https://platform.example.com/nrps/page-2',
+      context: { id: 'course-1' },
+      members: [
+        {
+          status: 'Active',
+          name: 'Grace Hopper',
+          user_id: 'user-2',
+          roles: [],
+        },
+      ],
+    });
+    const requests = recordFetch([tokenResponse(), pageOne, tokenResponse(), pageTwo]);
+    const advantage = ltiTool.createAdvantage(session);
+
+    const result = await advantage.getMembers({ followPagination: true });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected paginated NRPS success');
+    expect(result.data.members).toEqual([
+      {
+        status: 'Active',
+        name: 'Ada Lovelace',
+        userId: 'user-1',
+        roles: [],
+      },
+      {
+        status: 'Active',
+        name: 'Grace Hopper',
+        userId: 'user-2',
+        roles: [],
+      },
+    ]);
+    expect(result.data.pagination).toEqual({
+      pagesFetched: 2,
+      truncated: false,
+    });
+    expect(
+      requests.some(
+        (request) => request.url === 'https://platform.example.com/nrps/page-2',
+      ),
+    ).toBe(true);
+  });
+
+  it('reports NRPS truncation when maxPages is reached', async () => {
+    const pageOne = Response.json(
+      {
+        id: 'https://platform.example.com/nrps/members',
+        context: { id: 'course-1' },
+        members: [
+          {
+            status: 'Active',
+            name: 'Ada Lovelace',
+            user_id: 'user-1',
+            roles: [],
+          },
+        ],
+      },
+      {
+        headers: {
+          Link: '<https://platform.example.com/nrps/page-2>; rel="next"',
+        },
+      },
+    );
+    recordFetch([tokenResponse(), pageOne]);
+    const advantage = ltiTool.createAdvantage(session);
+
+    const result = await advantage.getMembers({ followPagination: true, maxPages: 1 });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected truncated NRPS success');
+    expect(result.data.members).toHaveLength(1);
+    expect(result.data.pagination).toEqual({
+      pagesFetched: 1,
+      truncated: true,
+      nextUrl: 'https://platform.example.com/nrps/page-2',
+    });
+  });
+
+  it('rejects invalid NRPS pagination limits', async () => {
+    const advantage = ltiTool.createAdvantage(session);
+
+    const result = await advantage.getMembers({ followPagination: true, maxPages: 0 });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected invalid pagination failure');
+    expect(result.error).toMatchObject({
+      code: 'invalid_request',
+      serviceKind: 'nrps',
+      operation: 'getMembers',
+      message: 'maxPages must be a positive integer',
+    });
+  });
+
+  it('returns an existing AGS line item from findOrCreateLineItem', async () => {
+    const existingLineItem = {
+      ...lineItem,
+      resourceLinkId: 'resource-link-1',
+      tag: 'quiz',
+    };
+    recordFetch([tokenResponse(), Response.json([existingLineItem])]);
+    const advantage = ltiTool.createAdvantage(lineItemsSession);
+
+    const result = await advantage.findOrCreateLineItem({
+      resourceLinkId: 'resource-link-1',
+      tag: 'quiz',
+      create: createLineItem,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected findOrCreate success');
+    expect(result.data).toEqual(existingLineItem);
+  });
+
+  it('creates an AGS line item when findOrCreateLineItem finds no match', async () => {
+    const createdLineItem = {
+      ...lineItem,
+      id: 'https://platform.example.com/ags/lineitems/2',
+      resourceLinkId: 'resource-link-1',
+      tag: 'quiz',
+    };
+    recordFetch([
+      tokenResponse(),
+      Response.json([]),
+      tokenResponse(),
+      Response.json(createdLineItem),
+    ]);
+    const advantage = ltiTool.createAdvantage(lineItemsSession);
+
+    const result = await advantage.findOrCreateLineItem({
+      resourceLinkId: 'resource-link-1',
+      tag: 'quiz',
+      create: createLineItem,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected findOrCreate create success');
+    expect(result.data).toEqual(createdLineItem);
+  });
+
+  it('rejects findOrCreateLineItem without identity keys', async () => {
+    const advantage = ltiTool.createAdvantage(lineItemsSession);
+
+    // @ts-expect-error Runtime precondition protects untyped callers.
+    const result = await advantage.findOrCreateLineItem({
+      create: createLineItem,
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected findOrCreate validation failure');
+    expect(result.error).toMatchObject({
+      code: 'invalid_request',
+      serviceKind: 'ags',
+      operation: 'findOrCreateLineItem',
+    });
+  });
+
+  it('rejects line item identity fields nested in findOrCreateLineItem create input', async () => {
+    const advantage = ltiTool.createAdvantage(lineItemsSession);
+
+    const result = await advantage.findOrCreateLineItem({
+      resourceLinkId: 'resource-link-1',
+      create: {
+        label: 'Quiz 1',
+        scoreMaximum: 10,
+        // @ts-expect-error Runtime precondition protects untyped callers.
+        resourceLinkId: 'nested-resource-link',
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected findOrCreate validation failure');
+    expect(result.error).toMatchObject({
+      code: 'invalid_request',
+      serviceKind: 'ags',
+      operation: 'findOrCreateLineItem',
+      message: 'Line item identity fields must be supplied at the top level',
+    });
+  });
+
+  it('recovers from AGS create races in findOrCreateLineItem', async () => {
+    const existingLineItem = {
+      ...lineItem,
+      id: 'https://platform.example.com/ags/lineitems/2',
+      resourceLinkId: 'resource-link-1',
+    };
+    recordFetch([
+      tokenResponse(),
+      Response.json([]),
+      tokenResponse(),
+      new Response('conflict', { status: 409, statusText: 'Conflict' }),
+      tokenResponse(),
+      Response.json([existingLineItem]),
+    ]);
+    const advantage = ltiTool.createAdvantage(lineItemsSession);
+
+    const result = await advantage.findOrCreateLineItem({
+      resourceLinkId: 'resource-link-1',
+      create: createLineItem,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected findOrCreate race recovery');
+    expect(result.data).toEqual(existingLineItem);
   });
 
   it('creates no-store html responses for deep linking returns', async () => {

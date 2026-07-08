@@ -121,11 +121,16 @@ export type {
 export { LTITool } from './ltiTool.js';
 export {
   LtiAdvantage,
+  type FindOrCreateLineItemInput,
   type LtiAdvantageInput,
   type LtiAdvantagePort,
   type LtiAgsClient,
   type LtiDeepLinkingClient,
   type LtiNrpsClient,
+  type NrpsGetMembersOptions,
+  type NrpsMembersPage,
+  type NrpsMembersPagination,
+  type NrpsMembersResult,
 } from './ltiAdvantage.js';
 export { LtiDynamicRegistration } from './ltiDynamicRegistration.js';
 export {

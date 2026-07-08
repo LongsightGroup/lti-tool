@@ -5,6 +5,7 @@ import { LtiStorageConflictError } from './ltiStorageError.js';
 export type LtiPlatformServiceErrorCode =
   | 'service_not_available'
   | 'missing_required_scope'
+  | 'invalid_request'
   | 'token_request_failed'
   | 'platform_request_failed'
   | 'platform_response_invalid';
@@ -103,7 +104,10 @@ type RunLtiServiceOperationInput<T> = {
  * Creates a structured service precondition failure before a platform request is sent.
  */
 export function ltiServicePreconditionFailure<T>(input: {
-  code: Extract<LtiServiceErrorCode, 'service_not_available' | 'missing_required_scope'>;
+  code: Extract<
+    LtiPlatformServiceErrorCode,
+    'service_not_available' | 'missing_required_scope' | 'invalid_request'
+  >;
   serviceKind: LtiServiceKind;
   operation: string;
   message: string;
@@ -314,6 +318,7 @@ export function isLtiPlatformServiceErrorCode(
   switch (code) {
     case 'service_not_available':
     case 'missing_required_scope':
+    case 'invalid_request':
     case 'token_request_failed':
     case 'platform_request_failed':
     case 'platform_response_invalid':

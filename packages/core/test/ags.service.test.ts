@@ -341,6 +341,27 @@ describe('AGSService', () => {
         }),
       );
     });
+
+    it('fetches a platform-provided line items page URL as-is', async () => {
+      const mockResponse = {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+      };
+      mockFetch.mockResolvedValue(mockResponse);
+
+      await agsService.listLineItems(
+        mockSession,
+        'https://platform.example.com/api/ags/lineitems?page=2',
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://platform.example.com/api/ags/lineitems?page=2',
+        expect.objectContaining({
+          method: 'GET',
+        }),
+      );
+    });
   });
 
   describe('getLineItem', () => {

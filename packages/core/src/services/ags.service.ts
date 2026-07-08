@@ -178,21 +178,19 @@ export class AGSService {
    */
   async listLineItems(
     session: LTISession,
-    lineItemsUrl: string,
-    options: AGSListLineItemsOptions = {},
+    url: string,
+    options?: AGSListLineItemsOptions,
   ): Promise<Response> {
     const token = await this.getAGSToken(session, LTI_AGS_SCOPE_LINEITEM_READONLY);
+    const requestUrl = options === undefined ? url : this.buildLineItemsUrl(url, options);
 
-    const response = await ltiServiceFetch(
-      this.buildLineItemsUrl(lineItemsUrl, options),
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.ims.lis.v2.lineitemcontainer+json',
-        },
+    const response = await ltiServiceFetch(requestUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.ims.lis.v2.lineitemcontainer+json',
       },
-    );
+    });
 
     await this.validateAGSResponse(response, 'list line items');
     return response;

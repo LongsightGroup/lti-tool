@@ -266,6 +266,7 @@ Once you have a session, create a session-bound Advantage facade:
 const advantage = ltiTool.createAdvantage(session);
 await advantage.submitScore(score);
 const roster = await advantage.getMembers();
+const fullRoster = await advantage.getMembers({ followPagination: true });
 const deepLink = await advantage.createDeepLinkingResponse(contentItems);
 if (deepLink.success) {
   // deepLink.data is the auto-submit HTML form
@@ -274,8 +275,8 @@ if (deepLink.success) {
 
 `LtiAdvantage` can call platform services on the user's behalf:
 
-- **AGS** — submit scores, manage line items, read results (`submitScore`, `createLineItem`, `getResults`, and related methods)
-- **NRPS** — fetch course membership (`getMembers`)
+- **AGS** — submit scores, manage line items, read results (`submitScore`, `createLineItem`, `findOrCreateLineItem`, `getScores`, and related methods)
+- **NRPS** — fetch course membership (`getMembers`, `getMembersPage`; use `{ followPagination: true }` for large rosters)
 - **Deep linking** — return content items to the platform (`createDeepLinkingResponse`)
 
 For routes that need an HTTP response directly, call

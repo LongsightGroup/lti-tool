@@ -1,5 +1,14 @@
 # @longsightgroup/lti-tool
 
+## 0.1.3
+
+### Patch Changes
+
+- Add session-bound LTI Advantage support for AGS line item find-or-create workflows, NRPS page retrieval, and opt-in NRPS pagination following.
+- Add structured `invalid_request` service failures for invalid Advantage service inputs.
+- Preserve platform-provided LTI pagination links while keeping pagination helpers internal to the package.
+- Document the new Advantage roster and line item APIs.
+
 ## 0.1.2
 
 ### Patch Changes

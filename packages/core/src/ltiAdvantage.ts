@@ -1,18 +1,36 @@
 import {
-  LTI_AGS_SCOPE_LINEITEM,
-  LTI_AGS_SCOPE_LINEITEM_READONLY,
-  LTI_AGS_SCOPE_RESULT_READONLY,
-  LTI_AGS_SCOPE_SCORE,
-} from './constants.js';
-import {
   ltiServicePreconditionFailure,
-  runLtiServiceCall,
   runLtiServiceOperation,
   type LtiServiceResult,
 } from './errors/ltiServiceError.js';
 import type { LtiLogger } from './interfaces/ltiLogger.js';
 import type { LTISession } from './interfaces/ltiSession.js';
 import type { LTIStorage } from './interfaces/ltiStorage.js';
+import {
+  findOrCreateLineItem as runFindOrCreateLineItem,
+  type LtiAdvantageAgsLineItemsDeps,
+} from './ltiAdvantage/agsLineItems.js';
+import {
+  getNrpsMembers,
+  getNrpsMembersPage,
+  type LtiAdvantageNrpsDeps,
+} from './ltiAdvantage/nrps.js';
+import {
+  AGS_LINEITEM_READONLY_SCOPE,
+  AGS_LINEITEM_SCOPE,
+  AGS_RESULT_READONLY_SCOPE,
+  AGS_SCORE_SCOPE,
+  requireAgsLineItem,
+  requireAgsLineItems,
+  runAgsEmptyOperation,
+  runAgsJsonOperation,
+} from './ltiAdvantage/shared.js';
+import type {
+  FindOrCreateLineItemInput,
+  NrpsGetMembersOptions,
+  NrpsMembersPage,
+  NrpsMembersResult,
+} from './ltiAdvantage/types.js';
 import {
   type CreateLineItem,
   type LineItem,
@@ -34,8 +52,14 @@ import {
 import { DeepLinkingService } from './services/deepLinking.service.js';
 import { NRPSService } from './services/nrps.service.js';
 import type { TokenService } from './services/token.service.js';
-import { hasLtiAgsScope, isLtiAgsLineItemsAvailable } from './utils/ags.js';
-import { normalizeLtiNrpsMembersResponse } from './utils/nrps.js';
+
+export type {
+  FindOrCreateLineItemInput,
+  NrpsGetMembersOptions,
+  NrpsMembersPage,
+  NrpsMembersPagination,
+  NrpsMembersResult,
+} from './ltiAdvantage/types.js';
 
 type LtiAdvantageServices = {
   readonly agsService: AGSService;
@@ -52,118 +76,6 @@ export type LtiAdvantageInput = {
   readonly logger: LtiLogger;
 };
 
-const requireAgsLineItem = <T>(
-  session: LTISession,
-  operation: string,
-  lineItemUrl = session.services?.ags?.lineitem,
-): string | LtiServiceResult<T> => {
-  const resolved = lineItemUrl ?? session.services?.ags?.lineitem;
-  if (resolved !== undefined) return resolved;
-
-  return ltiServicePreconditionFailure({
-    code: 'service_not_available',
-    serviceKind: 'ags',
-    operation,
-    message: 'AGS line item service is not available for this session',
-  });
-};
-
-const requireAgsLineItems = <T>(
-  session: LTISession,
-  operation: string,
-): string | LtiServiceResult<T> => {
-  const ags = session.services?.ags;
-  if (isLtiAgsLineItemsAvailable(session) && ags?.lineitems !== undefined) {
-    return ags.lineitems;
-  }
-
-  return ltiServicePreconditionFailure({
-    code: 'service_not_available',
-    serviceKind: 'ags',
-    operation,
-    message: 'AGS line items service is not available for this session',
-  });
-};
-
-const requireAgsScope = <T>(
-  session: LTISession,
-  scope: string,
-  operation: string,
-): LtiServiceResult<T> | undefined => {
-  if (hasLtiAgsScope(session, scope)) return undefined;
-
-  return ltiServicePreconditionFailure({
-    code: 'missing_required_scope',
-    serviceKind: 'ags',
-    operation,
-    message: `Missing required AGS scope '${scope}'`,
-  });
-};
-
-const requireNrpsMembership = <T>(
-  session: LTISession,
-  operation: string,
-): string | LtiServiceResult<T> => {
-  if (session.services?.nrps?.membershipUrl) return session.services.nrps.membershipUrl;
-
-  return ltiServicePreconditionFailure({
-    code: 'service_not_available',
-    serviceKind: 'nrps',
-    operation,
-    message: 'NRPS membership service is not available for this session',
-  });
-};
-
-type AgsUrlResolver<T> = () => string | LtiServiceResult<T>;
-
-const runAgsJsonOperation = <T>(
-  session: LTISession,
-  input: {
-    operation: string;
-    scope: string;
-    resolveUrl: AgsUrlResolver<T>;
-    parse: (data: unknown) => T;
-    request: (url: string) => Promise<Response>;
-  },
-): Promise<LtiServiceResult<T>> => {
-  const url = input.resolveUrl();
-  if (typeof url !== 'string') return Promise.resolve(url);
-
-  const scopeError = requireAgsScope<T>(session, input.scope, input.operation);
-  if (scopeError) return Promise.resolve(scopeError);
-
-  return runLtiServiceCall({
-    serviceKind: 'ags',
-    operation: input.operation,
-    request: () => input.request(url),
-    responseBody: 'json',
-    parse: input.parse,
-  });
-};
-
-const runAgsEmptyOperation = (
-  session: LTISession,
-  input: {
-    operation: string;
-    scope: string;
-    resolveUrl: AgsUrlResolver<void>;
-    request: (url: string) => Promise<Response>;
-  },
-): Promise<LtiServiceResult<void>> => {
-  const url = input.resolveUrl();
-  if (typeof url !== 'string') return Promise.resolve(url);
-
-  const scopeError = requireAgsScope<void>(session, input.scope, input.operation);
-  if (scopeError) return Promise.resolve(scopeError);
-
-  return runLtiServiceCall({
-    serviceKind: 'ags',
-    operation: input.operation,
-    request: () => input.request(url),
-    responseBody: 'none',
-  });
-};
-
 /**
  * Session-bound LTI Advantage facade for AGS, NRPS, and Deep Linking.
  */
@@ -175,6 +87,7 @@ export interface LtiAgsClient {
   createLineItem: LtiAdvantage['createLineItem'];
   updateLineItem: LtiAdvantage['updateLineItem'];
   deleteLineItem: LtiAdvantage['deleteLineItem'];
+  findOrCreateLineItem: LtiAdvantage['findOrCreateLineItem'];
 }
 
 /**
@@ -182,6 +95,7 @@ export interface LtiAgsClient {
  */
 export interface LtiNrpsClient {
   getMembers: LtiAdvantage['getMembers'];
+  getMembersPage: LtiAdvantage['getMembersPage'];
 }
 
 /**
@@ -226,7 +140,7 @@ export class LtiAdvantage {
   async submitScore(score: ScoreSubmission): Promise<LtiServiceResult<void>> {
     return await runAgsEmptyOperation(this.session, {
       operation: 'submitScore',
-      scope: LTI_AGS_SCOPE_SCORE,
+      scope: AGS_SCORE_SCOPE,
       resolveUrl: () => requireAgsLineItem<void>(this.session, 'submitScore'),
       request: (url) => this.services.agsService.submitScore(this.session, url, score),
     });
@@ -238,7 +152,7 @@ export class LtiAdvantage {
   async getScores(options: AGSGetScoresOptions = {}): Promise<LtiServiceResult<Results>> {
     return await runAgsJsonOperation(this.session, {
       operation: 'getScores',
-      scope: LTI_AGS_SCOPE_RESULT_READONLY,
+      scope: AGS_RESULT_READONLY_SCOPE,
       resolveUrl: () =>
         requireAgsLineItem<Results>(this.session, 'getScores', options.lineItemUrl),
       parse: (data) => ResultsSchema.parse(data),
@@ -254,7 +168,7 @@ export class LtiAdvantage {
   ): Promise<LtiServiceResult<LineItems>> {
     return await runAgsJsonOperation(this.session, {
       operation: 'listLineItems',
-      scope: LTI_AGS_SCOPE_LINEITEM_READONLY,
+      scope: AGS_LINEITEM_READONLY_SCOPE,
       resolveUrl: () => requireAgsLineItems<LineItems>(this.session, 'listLineItems'),
       parse: (data) => LineItemsSchema.parse(data),
       request: (url) =>
@@ -270,7 +184,7 @@ export class LtiAdvantage {
   ): Promise<LtiServiceResult<LineItem>> {
     return await runAgsJsonOperation(this.session, {
       operation: 'getLineItem',
-      scope: LTI_AGS_SCOPE_LINEITEM_READONLY,
+      scope: AGS_LINEITEM_READONLY_SCOPE,
       resolveUrl: () =>
         requireAgsLineItem<LineItem>(this.session, 'getLineItem', options.lineItemUrl),
       parse: (data) => LineItemSchema.parse(data),
@@ -286,7 +200,7 @@ export class LtiAdvantage {
   ): Promise<LtiServiceResult<LineItem>> {
     return await runAgsJsonOperation(this.session, {
       operation: 'createLineItem',
-      scope: LTI_AGS_SCOPE_LINEITEM,
+      scope: AGS_LINEITEM_SCOPE,
       resolveUrl: () => requireAgsLineItems<LineItem>(this.session, 'createLineItem'),
       parse: (data) => LineItemSchema.parse(data),
       request: (url) =>
@@ -302,7 +216,7 @@ export class LtiAdvantage {
   ): Promise<LtiServiceResult<LineItem>> {
     return await runAgsJsonOperation(this.session, {
       operation: 'updateLineItem',
-      scope: LTI_AGS_SCOPE_LINEITEM,
+      scope: AGS_LINEITEM_SCOPE,
       resolveUrl: () => requireAgsLineItem<LineItem>(this.session, 'updateLineItem'),
       parse: (data) => LineItemSchema.parse(data),
       request: (url) =>
@@ -316,26 +230,53 @@ export class LtiAdvantage {
   async deleteLineItem(): Promise<LtiServiceResult<void>> {
     return await runAgsEmptyOperation(this.session, {
       operation: 'deleteLineItem',
-      scope: LTI_AGS_SCOPE_LINEITEM,
+      scope: AGS_LINEITEM_SCOPE,
       resolveUrl: () => requireAgsLineItem<void>(this.session, 'deleteLineItem'),
       request: (url) => this.services.agsService.deleteLineItem(this.session, url),
     });
   }
 
   /**
-   * Retrieves course/context members using Names and Role Provisioning Services.
+   * Finds an existing line item matching the provided identity keys, or creates one.
+   *
+   * At least one of `resourceLinkId`, `resourceId`, or `tag` must be supplied. Matching
+   * is exact on each provided key; omitted keys are not compared.
+   *
+   * This operation is not atomic. Concurrent launches can race to create duplicate line
+   * items; on create failure the platform is re-listed and the first deterministic
+   * match (sorted by line item id) is returned when present.
    */
-  async getMembers(): Promise<LtiServiceResult<Member[]>> {
-    const membershipUrl = requireNrpsMembership<Member[]>(this.session, 'getMembers');
-    if (typeof membershipUrl !== 'string') return membershipUrl;
+  findOrCreateLineItem(
+    input: FindOrCreateLineItemInput,
+  ): Promise<LtiServiceResult<LineItem>> {
+    return runFindOrCreateLineItem(this.agsLineItemsDeps(), input);
+  }
 
-    return await runLtiServiceCall({
-      serviceKind: 'nrps',
-      operation: 'getMembers',
-      request: () => this.services.nrpsService.getMembers(this.session, membershipUrl),
-      responseBody: 'json',
-      parse: (data) => normalizeLtiNrpsMembersResponse(data),
-    });
+  /**
+   * Retrieves one page of course/context members using Names and Role Provisioning Services.
+   */
+  getMembersPage(pageUrl?: string): Promise<LtiServiceResult<NrpsMembersPage>> {
+    return getNrpsMembersPage(this.nrpsDeps(), pageUrl);
+  }
+
+  /**
+   * Retrieves course/context members using Names and Role Provisioning Services.
+   *
+   * By default only the first page is returned. Large courses may be silently truncated;
+   * pass `{ followPagination: true }` to follow Link rel="next" pages up to `maxPages`.
+   */
+  getMembers(): Promise<LtiServiceResult<Member[]>>;
+  getMembers(options: {
+    readonly followPagination?: false | undefined;
+  }): Promise<LtiServiceResult<Member[]>>;
+  getMembers(options: {
+    readonly followPagination: true;
+    readonly maxPages?: number;
+  }): Promise<LtiServiceResult<NrpsMembersResult>>;
+  getMembers(
+    options: NrpsGetMembersOptions = {},
+  ): Promise<LtiServiceResult<Member[] | NrpsMembersResult>> {
+    return getNrpsMembers(this.nrpsDeps(), options);
   }
 
   /**
@@ -382,6 +323,33 @@ export class LtiAdvantage {
           'content-type': 'text/html; charset=utf-8',
         },
       }),
+    };
+  }
+
+  private nrpsDeps(): LtiAdvantageNrpsDeps {
+    return {
+      session: this.session,
+      nrpsService: this.services.nrpsService,
+    };
+  }
+
+  private agsLineItemsDeps(): LtiAdvantageAgsLineItemsDeps {
+    return {
+      listLineItems: (
+        options?: AGSListLineItemsOptions,
+      ): Promise<LtiServiceResult<LineItems>> => this.listLineItems(options),
+      listLineItemsAt: (url: string): Promise<LtiServiceResult<LineItems>> =>
+        runAgsJsonOperation(this.session, {
+          operation: 'listLineItems',
+          scope: AGS_LINEITEM_READONLY_SCOPE,
+          resolveUrl: () => url,
+          parse: (data) => LineItemsSchema.parse(data),
+          request: (requestUrl) =>
+            this.services.agsService.listLineItems(this.session, requestUrl),
+        }),
+      createLineItem: (
+        createLineItem: CreateLineItem,
+      ): Promise<LtiServiceResult<LineItem>> => this.createLineItem(createLineItem),
     };
   }
 }

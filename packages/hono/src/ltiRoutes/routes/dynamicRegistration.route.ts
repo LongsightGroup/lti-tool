@@ -115,6 +115,7 @@ function dynamicRegistrationErrorStatus(error: LtiServiceError): 400 | 500 {
     case 'registration_session_expired':
     case 'platform_registration_rejected':
     case 'storage_conflict':
+    case 'invalid_request':
       return 400;
     case 'service_not_available':
     case 'missing_required_scope':
@@ -137,6 +138,8 @@ function dynamicRegistrationErrorMessage(error: LtiServiceError): string {
       return 'Dynamic registration is not available';
     case 'missing_required_scope':
       return 'Dynamic registration is missing a required scope';
+    case 'invalid_request':
+      return 'Invalid request';
     case 'token_request_failed':
     case 'platform_request_failed':
     case 'platform_response_invalid':

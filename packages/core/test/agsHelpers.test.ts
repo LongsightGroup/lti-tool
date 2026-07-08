@@ -10,6 +10,10 @@ import {
   isLtiAgsLineItemsAvailable,
   type LTISession,
 } from '../src/index.js';
+import {
+  matchesLtiAgsLineItemFilters,
+  pickDeterministicLtiAgsLineItem,
+} from '../src/utils/ags.js';
 
 describe('AGS helpers', () => {
   const session = {
@@ -49,5 +53,35 @@ describe('AGS helpers', () => {
     expect(
       hasLtiAgsScope(session, 'https://purl.imsglobal.org/spec/lti-ags/scope/score'),
     ).toBe(false);
+  });
+
+  it('matches line items on provided identity keys only', () => {
+    const lineItem = {
+      id: 'https://platform.example.com/ags/lineitems/2',
+      resourceLinkId: 'link-1',
+      resourceId: 'resource-1',
+      tag: 'quiz',
+    };
+
+    expect(
+      matchesLtiAgsLineItemFilters(lineItem, {
+        resourceLinkId: 'link-1',
+        tag: 'quiz',
+      }),
+    ).toBe(true);
+    expect(
+      matchesLtiAgsLineItemFilters(lineItem, {
+        resourceLinkId: 'link-2',
+      }),
+    ).toBe(false);
+  });
+
+  it('picks the first line item by id', () => {
+    expect(
+      pickDeterministicLtiAgsLineItem([
+        { id: 'https://platform.example.com/ags/lineitems/2' },
+        { id: 'https://platform.example.com/ags/lineitems/1' },
+      ])?.id,
+    ).toBe('https://platform.example.com/ags/lineitems/1');
   });
 });

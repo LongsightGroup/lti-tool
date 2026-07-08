@@ -80,6 +80,9 @@ export const LTI_AGS_SCOPES = [
 /** All standard LTI 1.3 Names and Role Provisioning Services OAuth scopes. */
 export const LTI_NRPS_SCOPES = [LTI_NRPS_SCOPE_CONTEXT_MEMBERSHIP_READONLY] as const;
 
+/** Default hard cap for auto-followed LTI service pagination. */
+export const DEFAULT_LTI_SERVICE_MAX_PAGES = 100;
+
 /** Common standard LTI role URIs used by launch and NRPS membership payloads. */
 export const LTI_ROLES = [
   LTI_ROLE_CONTEXT_ADMINISTRATOR,
