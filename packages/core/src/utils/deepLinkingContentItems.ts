@@ -7,10 +7,11 @@ export interface CreateLtiResourceLinkContentItemInput {
   url?: string;
   custom?: Record<string, string>;
   lineItem?: {
-    label: string;
+    label?: string;
     scoreMaximum: number;
     resourceId?: string;
     tag?: string;
+    gradesReleased?: boolean;
   };
 }
 

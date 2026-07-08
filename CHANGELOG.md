@@ -6,6 +6,7 @@
 
 - Fix LTI Deep Linking settings parsing to follow the 1EdTech spec: include `accept_lineitem`, `title`, and `text`; require `accept_presentation_document_targets`; and reject unknown Deep Linking settings keys instead of silently dropping them.
 - Add `acceptLineItem`, `title`, and `text` to the exported `LtiDeepLinkingSettings` session/capability contract.
+- Fix Deep Linking `ltiResourceLink.lineItem` parsing so `label` is optional, `scoreMaximum` must be positive, and `gradesReleased` is preserved.
 
 ## 0.1.3
 

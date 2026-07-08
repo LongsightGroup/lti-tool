@@ -49,10 +49,11 @@ export const LtiResourceLinkSchema = BaseContentItemSchema.extend({
   custom: z.record(z.string(), z.string()).optional(),
   lineItem: z
     .object({
-      scoreMaximum: z.number().min(0),
-      label: z.string(),
+      scoreMaximum: z.number().positive(),
+      label: z.string().optional(),
       resourceId: z.string().optional(),
       tag: z.string().optional(),
+      gradesReleased: z.boolean().optional(),
     })
     .optional(),
   available: z

@@ -27,6 +27,7 @@ describe('Deep Linking content item builders', () => {
           scoreMaximum: 100,
           resourceId: 'project',
           tag: 'summative',
+          gradesReleased: true,
         },
       }),
     ).toEqual({
@@ -42,8 +43,37 @@ describe('Deep Linking content item builders', () => {
         scoreMaximum: 100,
         resourceId: 'project',
         tag: 'summative',
+        gradesReleased: true,
       },
     });
+  });
+
+  it('builds an ltiResourceLink line item without an explicit label', () => {
+    expect(
+      createLtiResourceLinkContentItem({
+        title: 'Project',
+        lineItem: {
+          scoreMaximum: 100,
+        },
+      }),
+    ).toEqual({
+      type: 'ltiResourceLink',
+      title: 'Project',
+      lineItem: {
+        scoreMaximum: 100,
+      },
+    });
+  });
+
+  it('rejects non-positive ltiResourceLink score maximum values', () => {
+    expect(() =>
+      createLtiResourceLinkContentItem({
+        title: 'Project',
+        lineItem: {
+          scoreMaximum: 0,
+        },
+      }),
+    ).toThrowError(LtiContentItemConstructionError);
   });
 
   it('rejects invalid resource link content items with a typed error', () => {
