@@ -5,7 +5,7 @@ import { openIDConfigurationSchema } from './lti13/dynamicRegistration/openIDCon
 import { LTI13JwtPayloadSchema } from './lti13/lti13JwtPayload.schema.js';
 
 export const LTISessionUserSchema = z.object({
-  id: z.string(),
+  id: z.string().optional(),
   name: z.string().optional(),
   email: z.string().optional(),
   familyName: z.string().optional(),

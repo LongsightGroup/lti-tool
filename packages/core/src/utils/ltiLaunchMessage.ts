@@ -38,7 +38,6 @@ export class LtiLaunchMessageResolutionError extends Error {
 
 interface ResolvedLtiLaunchMessageBase {
   issuer: string;
-  subject: string;
   audience: string | string[];
   deploymentId: string;
   messageType: string;
@@ -58,6 +57,7 @@ interface ResolvedLtiLaunchMessageBase {
 export interface ResolvedLtiResourceLinkLaunchMessage extends ResolvedLtiLaunchMessageBase {
   kind: 'resource-link';
   messageType: typeof LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST;
+  subject: string;
   resourceLink: {
     id: string;
     title?: string;
@@ -67,6 +67,7 @@ export interface ResolvedLtiResourceLinkLaunchMessage extends ResolvedLtiLaunchM
 export interface ResolvedLtiDeepLinkingLaunchMessage extends ResolvedLtiLaunchMessageBase {
   kind: 'deep-linking';
   messageType: typeof LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST;
+  subject?: string;
   deepLinkingSettings: LtiDeepLinkingSettings;
 }
 
@@ -94,6 +95,7 @@ export function resolveLtiLaunchMessage(
       ...base,
       kind: 'resource-link',
       messageType,
+      subject: payload.sub,
       resourceLink: {
         id: resourceLink.id,
         ...(resourceLink.title === undefined ? {} : { title: resourceLink.title }),
@@ -116,6 +118,7 @@ export function resolveLtiLaunchMessage(
       ...base,
       kind: 'deep-linking',
       messageType,
+      ...(payload.sub === undefined ? {} : { subject: payload.sub }),
       deepLinkingSettings,
     };
   }
@@ -142,7 +145,6 @@ function resolveBaseLaunchMessage(
 
   return {
     issuer: payload.iss,
-    subject: payload.sub,
     audience: payload.aud,
     deploymentId: payload[LTI_CLAIM_DEPLOYMENT_ID],
     messageType: payload[LTI_CLAIM_MESSAGE_TYPE],

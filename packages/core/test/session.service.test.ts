@@ -13,6 +13,7 @@ import {
   LTI_CLAIM_ROLES,
   LTI_CLAIM_TARGET_LINK_URI,
   LTI_CLAIM_VERSION,
+  LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
   LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST,
   LTI_ROLE_CONTEXT_TEACHING_ASSISTANT,
   LTI_VERSION_1P3P0,
@@ -270,6 +271,24 @@ describe('createSession', () => {
       text: 'Default item text',
       data: 'custom_data_123',
     });
+  });
+
+  it('creates anonymous Deep Linking sessions when the launch omits sub', () => {
+    const payload = createMinimalPayload({
+      sub: undefined,
+      [LTI_CLAIM_MESSAGE_TYPE]: LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
+      [LTI_CLAIM_RESOURCE_LINK]: undefined,
+      [LTI_CLAIM_DEEP_LINKING_SETTINGS]: {
+        deep_link_return_url: 'https://platform.example.com/deep_links',
+        accept_types: ['ltiResourceLink'],
+        accept_presentation_document_targets: ['iframe'],
+      },
+    });
+
+    const session = createSession(payload);
+
+    expect('id' in session.user).toBe(false);
+    expect(session.isDeepLinkingAvailable).toBe(true);
   });
 
   it('creates session with no services when none present', () => {

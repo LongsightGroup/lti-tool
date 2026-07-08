@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LTI_CLAIM_CONTEXT,
+  LTI_CLAIM_DEEP_LINKING_SETTINGS,
   LTI_CLAIM_DEPLOYMENT_ID,
   LTI_CLAIM_MESSAGE_TYPE,
   LTI_CLAIM_PLATFORM_CONFIGURATION,
   LTI_CLAIM_ROLES,
   LTI_CLAIM_TARGET_LINK_URI,
   LTI_CLAIM_VERSION,
+  LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
   LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST,
   LTI_ROLE_CONTEXT_LEARNER,
   LTI_VERSION_1P3P0,
@@ -88,6 +90,22 @@ describe('LTI session JSON codecs', () => {
 
     expect(parsePersistedLtiSessionValue(session)).toEqual(session);
     expect(parsePersistedLtiSessionValue({ id: 'session-123' })).toBeUndefined();
+  });
+
+  it('round-trips anonymous Deep Linking launch sessions', () => {
+    const session = createSession({
+      ...sampleLaunchPayload(),
+      sub: undefined,
+      [LTI_CLAIM_MESSAGE_TYPE]: LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
+      [LTI_CLAIM_DEEP_LINKING_SETTINGS]: {
+        deep_link_return_url: 'https://platform.example.com/deep_links',
+        accept_types: ['ltiResourceLink'],
+        accept_presentation_document_targets: ['iframe'],
+      },
+    });
+    const dataJson = serializeLtiSession(session);
+
+    expect(parsePersistedLtiSession(dataJson)).toEqual(session);
   });
 
   it('round-trips persisted dynamic registration sessions', () => {

@@ -54,21 +54,6 @@ describe('Schema Validation Tests', () => {
         ].sort(),
       );
 
-      const extendedClaimKeys = [
-        LTI_CLAIM_RESOURCE_LINK,
-        LTI_CLAIM_CONTEXT,
-        LTI_CLAIM_TOOL_PLATFORM,
-        LTI_CLAIM_LIS,
-        LTI_CLAIM_LAUNCH_PRESENTATION,
-        LTI_CLAIM_CUSTOM,
-        LTI_CLAIM_AGS_ENDPOINT,
-        LTI_CLAIM_NRPS_NAMES_ROLE_SERVICE,
-        LTI_CLAIM_DEEP_LINKING_SETTINGS,
-      ];
-      for (const key of extendedClaimKeys) {
-        expect(LTI13JwtPayloadSchema.shape).toHaveProperty(key);
-      }
-
       expect(openIDConfigurationSchema.shape).toHaveProperty(
         LTI_CLAIM_PLATFORM_CONFIGURATION,
       );
@@ -97,6 +82,30 @@ describe('Schema Validation Tests', () => {
         [LTI_CLAIM_DEPLOYMENT_ID]: 'deployment1',
         [LTI_CLAIM_TARGET_LINK_URI]: 'https://tool.example.com/content',
         [LTI_CLAIM_ROLES]: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'],
+        [LTI_CLAIM_RESOURCE_LINK]: {
+          id: 'resource-link-123',
+        },
+        [LTI_CLAIM_CONTEXT]: {
+          id: 'context-123',
+        },
+        [LTI_CLAIM_TOOL_PLATFORM]: {
+          guid: 'platform-guid-123',
+        },
+        [LTI_CLAIM_LIS]: {
+          person_sourcedid: 'person-123',
+        },
+        [LTI_CLAIM_LAUNCH_PRESENTATION]: {
+          target: 'iframe',
+        },
+        [LTI_CLAIM_CUSTOM]: {
+          custom_key: 'custom-value',
+        },
+        [LTI_CLAIM_AGS_ENDPOINT]: {
+          scope: [],
+        },
+        [LTI_CLAIM_NRPS_NAMES_ROLE_SERVICE]: {
+          context_memberships_url: 'https://platform.example.com/nrps',
+        },
       };
 
       expect(() => LTI13JwtPayloadSchema.parse(validPayload)).not.toThrow();
@@ -397,6 +406,43 @@ describe('Schema Validation Tests', () => {
       };
 
       expect(() => LTI13JwtPayloadSchema.parse(invalidPayload)).toThrow();
+    });
+
+    it('rejects Resource Link payloads without a subject', () => {
+      const invalidPayload = {
+        iss: 'https://platform.example.com',
+        aud: 'client123',
+        exp: Math.floor(Date.now() / 1000) + 300,
+        iat: Math.floor(Date.now() / 1000),
+        nonce: 'test-nonce',
+        [LTI_CLAIM_MESSAGE_TYPE]: LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST,
+        [LTI_CLAIM_VERSION]: LTI_VERSION_1P3P0,
+        [LTI_CLAIM_DEPLOYMENT_ID]: 'deployment1',
+        [LTI_CLAIM_TARGET_LINK_URI]: 'https://tool.example.com/content',
+      };
+
+      expect(() => LTI13JwtPayloadSchema.parse(invalidPayload)).toThrow();
+    });
+
+    it('accepts Deep Linking payloads without a subject', () => {
+      const validPayload = {
+        iss: 'https://platform.example.com',
+        aud: 'client123',
+        exp: Math.floor(Date.now() / 1000) + 300,
+        iat: Math.floor(Date.now() / 1000),
+        nonce: 'test-nonce',
+        [LTI_CLAIM_MESSAGE_TYPE]: LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
+        [LTI_CLAIM_VERSION]: LTI_VERSION_1P3P0,
+        [LTI_CLAIM_DEPLOYMENT_ID]: 'deployment1',
+        [LTI_CLAIM_TARGET_LINK_URI]: 'https://tool.example.com/content',
+        [LTI_CLAIM_DEEP_LINKING_SETTINGS]: {
+          deep_link_return_url: 'https://platform.example.com/deep_links',
+          accept_types: ['ltiResourceLink'],
+          accept_presentation_document_targets: ['iframe'],
+        },
+      };
+
+      expect(() => LTI13JwtPayloadSchema.parse(validPayload)).not.toThrow();
     });
 
     it('rejects payload with invalid message type', () => {

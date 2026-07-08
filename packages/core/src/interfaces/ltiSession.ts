@@ -15,8 +15,8 @@ export interface LTISession {
 
   /** User information extracted from LTI claims */
   user: {
-    /** Unique user identifier from the platform */
-    id: string;
+    /** Unique user identifier from the platform, absent for anonymous Deep Linking launches */
+    id?: string;
     /** User's display name */
     name?: string;
     /** User's email address */

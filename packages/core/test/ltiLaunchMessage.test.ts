@@ -106,6 +106,30 @@ describe('resolveLtiLaunchMessage', () => {
     });
   });
 
+  it('resolves anonymous Deep Linking launch messages without a subject', () => {
+    const resolved = resolveLtiLaunchMessage(
+      createPayload({
+        sub: undefined,
+        [LTI_CLAIM_MESSAGE_TYPE]: LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
+        [LTI_CLAIM_ROLES]: [LTI_ROLE_CONTEXT_INSTRUCTOR],
+        [LTI_CLAIM_RESOURCE_LINK]: undefined,
+        [LTI_CLAIM_DEEP_LINKING_SETTINGS]: {
+          deep_link_return_url: 'https://platform.example.com/deep_links',
+          accept_types: ['ltiResourceLink'],
+          accept_presentation_document_targets: ['iframe'],
+        },
+      }),
+    );
+
+    expect(resolved).toMatchObject({
+      kind: 'deep-linking',
+      deepLinkingSettings: {
+        returnUrl: 'https://platform.example.com/deep_links',
+      },
+    });
+    expect('subject' in resolved).toBe(false);
+  });
+
   it('throws a typed error when Resource Link messages omit resource_link.id', () => {
     expect(() =>
       resolveLtiLaunchMessage(

@@ -76,7 +76,7 @@ export function createSession(
     jwtPayload: lti13JwtPayload,
     id: crypto.randomUUID(),
     user: {
-      id: lti13JwtPayload.sub,
+      ...(lti13JwtPayload.sub === undefined ? {} : { id: lti13JwtPayload.sub }),
       name: lti13JwtPayload.name,
       email: lti13JwtPayload.email,
       familyName: lti13JwtPayload.family_name,

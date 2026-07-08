@@ -285,9 +285,8 @@ export class LTITool {
       await this.config.storage.addSession(session);
       return session;
     } catch (error) {
-      throw new Error(
-        `[Session] Creation failed for user '${launch.payload.sub}': ${formatError(error)}`,
-      );
+      const subject = launch.payload.sub ?? 'anonymous launch';
+      throw new Error(`[Session] Creation failed for ${subject}: ${formatError(error)}`);
     }
   }
 

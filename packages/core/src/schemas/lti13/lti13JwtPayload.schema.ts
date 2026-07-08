@@ -7,9 +7,12 @@ import {
   LTI_CLAIM_DEEP_LINKING_SETTINGS,
   LTI_CLAIM_LAUNCH_PRESENTATION,
   LTI_CLAIM_LIS,
+  LTI_CLAIM_MESSAGE_TYPE,
   LTI_CLAIM_NRPS_NAMES_ROLE_SERVICE,
   LTI_CLAIM_RESOURCE_LINK,
   LTI_CLAIM_TOOL_PLATFORM,
+  LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
+  LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST,
 } from '../../constants.js';
 
 import { BaseJwtClaimsSchema } from './claims/baseJwtClaims.schema.js';
@@ -27,7 +30,7 @@ import {
   NrpsServiceSchema,
 } from './claims/serviceClaims.schema.js';
 
-export const LTI13JwtPayloadSchema = BaseJwtClaimsSchema.extend(PrivacyClaimsSchema.shape)
+const LTI13JwtPayloadBaseSchema = BaseJwtClaimsSchema.extend(PrivacyClaimsSchema.shape)
   .extend(CoreLtiClaimsSchema.shape)
   .extend({
     [LTI_CLAIM_RESOURCE_LINK]: ResourceLinkSchema,
@@ -40,5 +43,19 @@ export const LTI13JwtPayloadSchema = BaseJwtClaimsSchema.extend(PrivacyClaimsSch
     [LTI_CLAIM_NRPS_NAMES_ROLE_SERVICE]: NrpsServiceSchema,
     [LTI_CLAIM_DEEP_LINKING_SETTINGS]: DeepLinkingSettingsSchema,
   });
+
+const LTI13ResourceLinkJwtPayloadSchema = LTI13JwtPayloadBaseSchema.extend({
+  sub: z.string(),
+  [LTI_CLAIM_MESSAGE_TYPE]: z.literal(LTI_MESSAGE_TYPE_RESOURCE_LINK_REQUEST),
+});
+
+const LTI13DeepLinkingJwtPayloadSchema = LTI13JwtPayloadBaseSchema.extend({
+  [LTI_CLAIM_MESSAGE_TYPE]: z.literal(LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST),
+});
+
+export const LTI13JwtPayloadSchema = z.discriminatedUnion(LTI_CLAIM_MESSAGE_TYPE, [
+  LTI13ResourceLinkJwtPayloadSchema,
+  LTI13DeepLinkingJwtPayloadSchema,
+]);
 
 export type LTI13JwtPayload = z.infer<typeof LTI13JwtPayloadSchema>;
