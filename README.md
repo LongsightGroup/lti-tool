@@ -279,6 +279,11 @@ if (deepLink.success) {
 - **NRPS** — fetch course membership (`getMembers`, `getMembersPage`; use `{ followPagination: true }` for large rosters)
 - **Deep linking** — return content items to the platform (`createDeepLinkingResponse`)
 
+Deep Linking launches expose normalized platform settings at
+`session.services.deepLinking`, including `acceptTypes`,
+`acceptPresentationDocumentTargets`, and optional `acceptLineItem` support for
+platforms that allow returned resource links to include AGS line item metadata.
+
 For routes that need an HTTP response directly, call
 `createDeepLinkingHtmlResponse(contentItems)` for a typed `LtiServiceResult<Response>`
 with `text/html` and `no-store` headers.
