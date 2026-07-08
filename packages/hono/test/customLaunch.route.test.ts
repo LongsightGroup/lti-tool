@@ -5,9 +5,12 @@ import {
   LTI13JwtPayloadSchema,
   LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
   LtiLaunchVerificationError,
+  type LtiAuthorizeVerifiedLaunchOptions,
   type LtiAuthorizedLaunch,
+  type LtiLaunchVerificationEvent,
   type LtiLaunchVerificationResult,
   type LtiToolPort,
+  type LtiVerifyLaunchEventOptions,
   type LtiVerifyLaunchOptions,
   type LTISession,
 } from '@longsightgroup/lti-tool';
@@ -36,11 +39,12 @@ function createToolPort(session: LTISession): LtiToolPort {
   function verifyLaunch(
     _idToken: string,
     _state: string,
+    options?: LtiVerifyLaunchEventOptions,
   ): Promise<LtiLaunchVerificationResult>;
   function verifyLaunch<TAuthorization>(
     _idToken: string,
     _state: string,
-    options: LtiVerifyLaunchOptions<TAuthorization>,
+    options: LtiAuthorizeVerifiedLaunchOptions<TAuthorization>,
   ): Promise<LtiLaunchVerificationResult<LtiAuthorizedLaunch<TAuthorization>>>;
   async function verifyLaunch<TAuthorization>(
     _idToken: string,
@@ -51,6 +55,12 @@ function createToolPort(session: LTISession): LtiToolPort {
     | LtiLaunchVerificationResult<LtiAuthorizedLaunch<TAuthorization>>
   > {
     if (!options?.authorizeVerifiedLaunch) {
+      options?.onVerificationEvent?.({
+        type: 'launch_verified',
+        issuer: launch.issuer,
+        clientId: launch.clientId,
+        deploymentId: launch.deploymentId,
+      });
       return { success: true, launch };
     }
 
@@ -66,6 +76,12 @@ function createToolPort(session: LTISession): LtiToolPort {
       };
     }
 
+    options.onVerificationEvent?.({
+      type: 'launch_verified',
+      issuer: launch.issuer,
+      clientId: launch.clientId,
+      deploymentId: launch.deploymentId,
+    });
     return {
       success: true,
       launch: { ...launch, authorization: result.data },
@@ -127,6 +143,31 @@ describe('customLaunchRouteHandler', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe(session.id);
     expect(seenSessionIds).toEqual([session.id]);
+  });
+
+  it('passes verification events with Hono context', async () => {
+    const seenEvents: Array<{
+      readonly path: string;
+      readonly event: LtiLaunchVerificationEvent;
+    }> = [];
+    const response = await requestLaunch(createToolPort(testSession()), {
+      onVerificationEvent: ({ hono, event }) => {
+        seenEvents.push({ path: hono.req.path, event });
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(seenEvents).toEqual([
+      {
+        path: '/lti/launch',
+        event: {
+          type: 'launch_verified',
+          issuer: 'https://platform.example.com',
+          clientId: 'oauth-client-id',
+          deploymentId: 'platform-deployment-id',
+        },
+      },
+    ]);
   });
 
   it('renders deep linking launches with deep linking settings', async () => {

@@ -17,7 +17,9 @@ import { ZodError } from 'zod';
 
 import {
   verifyLaunchRequest,
+  type HonoLtiLaunchVerificationEventObserver,
   type LtiLaunchVerificationFailureResponse,
+  type VerifyLaunchEventOptions,
 } from '../launchFlow.js';
 
 type CustomLaunchContext<TLaunch extends LtiVerifiedLaunch> = {
@@ -67,6 +69,7 @@ type CustomLaunchRendererOptions<TLaunch extends LtiVerifiedLaunch> = {
     context: CustomVerifiedLaunchContext<TLaunch>,
   ) => void | Promise<void>;
   readonly onVerificationFailure?: LtiLaunchVerificationFailureResponse;
+  readonly onVerificationEvent?: HonoLtiLaunchVerificationEventObserver;
   readonly renderResourceLink: (
     context: CustomResourceLinkLaunchContext<TLaunch>,
   ) => CustomLaunchResponse;
@@ -106,17 +109,18 @@ export function customLaunchRouteHandler<TAuthorization>(
     return createAuthorizedCustomLaunchRouteHandler(options);
   }
 
-  return createCustomLaunchRouteHandler(options, (idToken, state) =>
-    options.ltiTool.verifyLaunch(idToken, state),
+  return createCustomLaunchRouteHandler(options, (idToken, state, verifyOptions) =>
+    options.ltiTool.verifyLaunch(idToken, state, verifyOptions),
   );
 }
 
 function createAuthorizedCustomLaunchRouteHandler<TAuthorization>(
   options: AuthorizedCustomLaunchRouteOptions<TAuthorization>,
 ): Handler {
-  return createCustomLaunchRouteHandler(options, (idToken, state) =>
+  return createCustomLaunchRouteHandler(options, (idToken, state, verifyOptions) =>
     options.ltiTool.verifyLaunch(idToken, state, {
       authorizeVerifiedLaunch: options.authorizeLaunch,
+      onVerificationEvent: verifyOptions?.onVerificationEvent,
     }),
   );
 }
@@ -126,6 +130,7 @@ function createCustomLaunchRouteHandler<TLaunch extends LtiVerifiedLaunch>(
   verifyLaunch: (
     idToken: string,
     state: string,
+    options?: VerifyLaunchEventOptions,
   ) => Promise<LtiLaunchVerificationResult<TLaunch>>,
 ): Handler {
   return async (c) => {
@@ -133,6 +138,7 @@ function createCustomLaunchRouteHandler<TLaunch extends LtiVerifiedLaunch>(
       const verification = await verifyLaunchRequest(c, {
         verifyLaunch,
         onVerificationFailure: options.onVerificationFailure,
+        onVerificationEvent: options.onVerificationEvent,
       });
       if (!verification.success) return verification.response;
 

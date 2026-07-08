@@ -1,7 +1,7 @@
-import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
+import { createRemoteJWKSet, decodeJwt, jwtVerify, type RemoteJWKSetOptions } from 'jose';
 
 import { LTI_CLAIM_DEPLOYMENT_ID, LTI_CLAIM_TARGET_LINK_URI } from '../constants.js';
-import type { LTILaunchConfig } from '../interfaces/index.js';
+import type { LTILaunchConfig } from '../interfaces/ltiLaunchConfig.js';
 import type { LTIStorage } from '../interfaces/ltiStorage.js';
 import {
   HandleLoginParamsSchema,
@@ -16,6 +16,57 @@ import { resolveLaunchConfig } from './launchConfigValidation.js';
 type RemoteJwks = ReturnType<typeof createRemoteJWKSet>;
 export type LtiLaunchJwksCache = Map<string, RemoteJwks>;
 
+/** Remote JWKS fetch and cache bounds used while verifying launch JWTs. */
+export interface LtiRemoteJwksOptions {
+  /** Timeout in milliseconds for a remote JWKS HTTP request. */
+  readonly timeoutDuration?: RemoteJWKSetOptions['timeoutDuration'];
+  /** Duration in milliseconds before another successful JWKS fetch may occur. */
+  readonly cooldownDuration?: RemoteJWKSetOptions['cooldownDuration'];
+  /** Maximum age in milliseconds for the cached JWKS before refresh. */
+  readonly cacheMaxAge?: RemoteJWKSetOptions['cacheMaxAge'];
+}
+
+/** Issuer, client, and deployment identity shared by launch verification events. */
+export interface LtiLaunchIdentity {
+  readonly issuer: string;
+  readonly clientId: string;
+  readonly deploymentId: string;
+}
+
+/** Event emitted after a launch verification result is known. */
+export interface LtiLaunchVerifiedEvent extends LtiLaunchIdentity {
+  readonly type: 'launch_verified';
+}
+
+/** Event emitted after launch verification returns a structured failure. */
+export interface LtiLaunchVerificationFailedEvent {
+  readonly type: 'launch_verification_failed';
+  readonly code: LtiLaunchVerificationErrorCode;
+}
+
+/** Event emitted when a cached JWKS misses a key ID and verification refetches once. */
+export interface LtiLaunchJwksKidMissRefetchEvent extends LtiLaunchIdentity {
+  readonly type: 'jwks_kid_miss_refetch';
+  readonly jwksUrl: string;
+}
+
+/** Safe launch verification event for audit, metrics, or tracing observers. */
+export type LtiLaunchVerificationEvent =
+  | LtiLaunchVerifiedEvent
+  | LtiLaunchVerificationFailedEvent
+  | LtiLaunchJwksKidMissRefetchEvent;
+
+/**
+ * Synchronous observer for launch verification events.
+ *
+ * In edge runtimes, schedule asynchronous audit writes in the framework layer
+ * with the platform's background-work primitive, such as Cloudflare
+ * `ctx.waitUntil`.
+ */
+export type LtiLaunchVerificationEventObserver = (
+  event: LtiLaunchVerificationEvent,
+) => void;
+
 interface VerifyLtiLaunchInput {
   idToken: string;
   state: string;
@@ -23,6 +74,8 @@ interface VerifyLtiLaunchInput {
   storage: LTIStorage;
   trustedAudiences?: string[];
   jwksCache: LtiLaunchJwksCache;
+  remoteJwks?: LtiRemoteJwksOptions;
+  onVerificationEvent?: LtiLaunchVerificationEventObserver;
 }
 
 export type LtiLaunchVerificationErrorCode =
@@ -85,12 +138,25 @@ export type LtiVerifiedLaunchAuthorizationResult<TAuthorization> =
       cause?: unknown;
     };
 
-export interface LtiVerifyLaunchOptions<TAuthorization> {
-  authorizeVerifiedLaunch?: (
-    launch: LtiVerifiedLaunch,
-  ) =>
-    | LtiVerifiedLaunchAuthorizationResult<TAuthorization>
-    | Promise<LtiVerifiedLaunchAuthorizationResult<TAuthorization>>;
+export type LtiVerifiedLaunchAuthorizer<TAuthorization> = (
+  launch: LtiVerifiedLaunch,
+) =>
+  | LtiVerifiedLaunchAuthorizationResult<TAuthorization>
+  | Promise<LtiVerifiedLaunchAuthorizationResult<TAuthorization>>;
+
+export interface LtiVerifyLaunchOptions<TAuthorization = never> {
+  authorizeVerifiedLaunch?: LtiVerifiedLaunchAuthorizer<TAuthorization>;
+  onVerificationEvent?: LtiLaunchVerificationEventObserver;
+}
+
+export type LtiAuthorizeVerifiedLaunchOptions<TAuthorization> =
+  LtiVerifyLaunchOptions<TAuthorization> & {
+    readonly authorizeVerifiedLaunch: LtiVerifiedLaunchAuthorizer<TAuthorization>;
+  };
+
+export interface LtiVerifyLaunchEventOptions {
+  readonly authorizeVerifiedLaunch?: undefined;
+  readonly onVerificationEvent?: LtiLaunchVerificationEventObserver;
 }
 
 export type LtiLaunchVerificationResult<
@@ -144,6 +210,8 @@ export async function verifyLtiLaunch({
   storage,
   trustedAudiences,
   jwksCache,
+  remoteJwks,
+  onVerificationEvent,
 }: VerifyLtiLaunchInput): Promise<LtiVerifiedLaunch> {
   const validatedParams = verifyLaunchParams(idToken, state);
   const unverified = decodeLaunchJwt(validatedParams.idToken);
@@ -160,12 +228,15 @@ export async function verifyLtiLaunch({
     stateData.clientId,
     deploymentId,
   );
-  const payload = await readVerifiedLaunchJwt(
-    validatedParams.idToken,
-    launchConfig.jwksUrl,
-    launchConfig.clientId,
+  const payload = await readVerifiedLaunchPayload({
+    idToken: validatedParams.idToken,
+    issuer: unverified.iss,
+    deploymentId,
+    launchConfig,
     jwksCache,
-  );
+    remoteJwks,
+    onVerificationEvent,
+  });
   const validated = parseVerifiedLaunchPayload(payload);
   validateVerifiedLaunchClaims(
     validated,
@@ -183,6 +254,50 @@ export async function verifyLtiLaunch({
     targetLinkUri: stateData.targetLinkUri,
     launchConfig,
   };
+}
+
+async function readVerifiedLaunchPayload(input: {
+  readonly idToken: string;
+  readonly issuer: string;
+  readonly deploymentId: string;
+  readonly launchConfig: LTILaunchConfig;
+  readonly jwksCache: LtiLaunchJwksCache;
+  readonly remoteJwks?: LtiRemoteJwksOptions;
+  readonly onVerificationEvent?: LtiLaunchVerificationEventObserver;
+}): Promise<unknown> {
+  const { payload, refetchedOnKidMiss } = await readVerifiedLaunchJwt(
+    input.idToken,
+    input.launchConfig,
+    input.jwksCache,
+    input.remoteJwks,
+  );
+  notifyJwksKidMissRefetch(input.onVerificationEvent, {
+    refetchedOnKidMiss,
+    issuer: input.issuer,
+    clientId: input.launchConfig.clientId,
+    deploymentId: input.deploymentId,
+    jwksUrl: input.launchConfig.jwksUrl,
+  });
+  return payload;
+}
+
+function notifyJwksKidMissRefetch(
+  observer: LtiLaunchVerificationEventObserver | undefined,
+  input: LtiLaunchIdentity & {
+    readonly refetchedOnKidMiss: boolean;
+    readonly jwksUrl: string;
+  },
+): void {
+  if (!input.refetchedOnKidMiss) return;
+
+  // Keep key-rotation audit visible even when later claim or nonce checks reject the launch.
+  notifyLaunchVerificationEvent(observer, {
+    type: 'jwks_kid_miss_refetch',
+    issuer: input.issuer,
+    clientId: input.clientId,
+    deploymentId: input.deploymentId,
+    jwksUrl: input.jwksUrl,
+  });
 }
 
 function validateVerifiedLaunchClaims(
@@ -376,12 +491,17 @@ function validateLaunchConfig(
 
 async function readVerifiedLaunchJwt(
   idToken: string,
-  jwksUrl: string,
-  audience: string,
-  jwksCache: Map<string, RemoteJwks>,
-): Promise<unknown> {
+  launchConfig: LTILaunchConfig,
+  jwksCache: LtiLaunchJwksCache,
+  remoteJwks?: LtiRemoteJwksOptions,
+): Promise<{ payload: unknown; refetchedOnKidMiss: boolean }> {
   try {
-    return await verifyLaunchJwtWithCachedJwks(idToken, jwksUrl, audience, jwksCache);
+    return await verifyLaunchJwtWithCachedJwks(
+      idToken,
+      launchConfig.jwksUrl,
+      launchConfig.clientId,
+      { jwksCache, remoteJwks },
+    );
   } catch (error) {
     throw new LtiLaunchVerificationError(
       'jwt_verification_failed',
@@ -395,35 +515,70 @@ async function verifyLaunchJwtWithCachedJwks(
   idToken: string,
   jwksUrl: string,
   audience: string,
-  jwksCache: Map<string, RemoteJwks>,
-): Promise<unknown> {
-  const jwks = getOrCreateJwks(jwksUrl, jwksCache);
+  options: {
+    readonly jwksCache: Map<string, RemoteJwks>;
+    readonly remoteJwks?: LtiRemoteJwksOptions;
+  },
+): Promise<{ payload: unknown; refetchedOnKidMiss: boolean }> {
+  const jwks = getOrCreateJwks(jwksUrl, options.jwksCache, options.remoteJwks);
 
   try {
     const { payload } = await jwtVerify(idToken, jwks, { audience });
-    return payload;
+    return { payload, refetchedOnKidMiss: false };
   } catch (error) {
-    if ((error as { code?: string }).code !== 'ERR_JWKS_NO_MATCHING_KEY') {
+    if (!isJwksNoMatchingKeyError(error)) {
       throw error;
     }
 
-    jwksCache.delete(jwksUrl);
-    const refreshedJwks = getOrCreateJwks(jwksUrl, jwksCache);
+    options.jwksCache.delete(jwksUrl);
+    const refreshedJwks = getOrCreateJwks(jwksUrl, options.jwksCache, options.remoteJwks);
     const { payload } = await jwtVerify(idToken, refreshedJwks, { audience });
-    return payload;
+    return { payload, refetchedOnKidMiss: true };
   }
 }
 
 function getOrCreateJwks(
   jwksUrl: string,
   jwksCache: Map<string, RemoteJwks>,
+  remoteJwksOptions: LtiRemoteJwksOptions | undefined,
 ): RemoteJwks {
   let jwks = jwksCache.get(jwksUrl);
   if (!jwks) {
-    jwks = createRemoteJWKSet(new URL(jwksUrl));
+    jwks = createRemoteJWKSet(new URL(jwksUrl), remoteJwksOptions);
     jwksCache.set(jwksUrl, jwks);
   }
   return jwks;
+}
+
+function isJwksNoMatchingKeyError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'ERR_JWKS_NO_MATCHING_KEY'
+  );
+}
+
+/** Notifies an observer without allowing observer failures to escape. */
+function safeNotifyObserver<T>(
+  observer: ((payload: T) => void) | undefined,
+  payload: T,
+): void {
+  if (!observer) return;
+
+  try {
+    observer(payload);
+  } catch {
+    // Observers must never affect launch verification.
+  }
+}
+
+/** Notifies a launch verification observer without allowing observer failures to escape. */
+export function notifyLaunchVerificationEvent(
+  observer: LtiLaunchVerificationEventObserver | undefined,
+  event: LtiLaunchVerificationEvent,
+): void {
+  safeNotifyObserver(observer, event);
 }
 
 function parseVerifiedLaunchPayload(payload: unknown): LTI13JwtPayload {

@@ -8,12 +8,14 @@ import type {
 } from '../ltiRouteDeps.js';
 import { createLtiRouteLogger, type LtiRouteLoggerOptions } from '../ltiRouteLogging.js';
 
+import type { HonoLtiLaunchVerificationEventObserver } from './launchFlow.js';
 import { jwksRouteHandler } from './routes/jwks.route.js';
 import { launchRouteHandler } from './routes/launch.route.js';
 import { loginRouteHandler } from './routes/login.route.js';
 
 export type CreateLtiRoutesOptions = LtiRouteLoggerOptions & {
   ltiTool: LtiToolPort & { getJWKS: () => Promise<JWKS> };
+  onVerificationEvent?: HonoLtiLaunchVerificationEventObserver;
 };
 
 /**
@@ -37,9 +39,11 @@ export function createLtiRoutes(options: CreateLtiRoutesOptions): Hono {
     logger,
   };
   const launchDeps: LtiLaunchRouteDeps = {
-    verifyLaunch: (idToken, state) => ltiTool.verifyLaunch(idToken, state),
+    verifyLaunch: (idToken, state, verifyOptions) =>
+      ltiTool.verifyLaunch(idToken, state, verifyOptions),
     createSessionFromVerifiedLaunch: (launch) =>
       ltiTool.createSessionFromVerifiedLaunch(launch),
+    onVerificationEvent: options.onVerificationEvent,
     logger,
   };
   const app = new Hono();

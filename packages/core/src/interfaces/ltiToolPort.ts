@@ -1,9 +1,10 @@
 import type { LtiAdvantagePort } from '../ltiAdvantage.js';
 import type {
+  LtiAuthorizeVerifiedLaunchOptions,
   LtiAuthorizedLaunch,
   LtiLaunchVerificationResult,
   LtiVerifiedLaunch,
-  LtiVerifyLaunchOptions,
+  LtiVerifyLaunchEventOptions,
 } from '../utils/ltiLaunchVerification.js';
 
 import type { JWKS } from './jwks.js';
@@ -26,11 +27,15 @@ export interface LtiToolPort {
     lti_message_hint?: string;
   }): Promise<string>;
 
-  verifyLaunch(idToken: string, state: string): Promise<LtiLaunchVerificationResult>;
+  verifyLaunch(
+    idToken: string,
+    state: string,
+    options?: LtiVerifyLaunchEventOptions,
+  ): Promise<LtiLaunchVerificationResult>;
   verifyLaunch<TAuthorization>(
     idToken: string,
     state: string,
-    options: LtiVerifyLaunchOptions<TAuthorization>,
+    options: LtiAuthorizeVerifiedLaunchOptions<TAuthorization>,
   ): Promise<LtiLaunchVerificationResult<LtiAuthorizedLaunch<TAuthorization>>>;
 
   createSessionFromVerifiedLaunch(launch: LtiVerifiedLaunch): Promise<LTISession>;

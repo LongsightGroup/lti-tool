@@ -52,6 +52,27 @@ if (result.success) {
 }
 ```
 
+Launch verification can emit safe audit events and tune remote JWKS fetch bounds:
+
+```typescript
+const ltiTool = new LTITool({
+  stateSecret,
+  keyPair,
+  storage,
+  onVerificationEvent: (event) => audit.record(event),
+  security: {
+    remoteJwks: {
+      timeoutDuration: 2_000,
+      cooldownDuration: 30_000,
+      cacheMaxAge: 600_000,
+    },
+  },
+});
+```
+
+For edge runtimes, pass a per-request `onVerificationEvent` to `verifyLaunch` and
+schedule asynchronous audit writes with the platform's background-work primitive.
+
 Use `upsertLaunchRegistration` whenever an LMS administrator gives you issuer, client ID, deployment ID, and OIDC endpoints. For self-service registration, use `LtiDynamicRegistration`. Custom admin UIs that manage stored client or deployment records directly should call `LTIStorage` methods instead of `LTITool`.
 
 `LTIStorage.validateNonce` atomically claims nonces during launch verification. Configure

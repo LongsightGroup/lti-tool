@@ -16,8 +16,11 @@ export type {
 } from '../ltiRouteDeps.js';
 export {
   renderDefaultLaunchVerificationFailureResponse,
+  type HonoLtiLaunchVerificationEventContext,
+  type HonoLtiLaunchVerificationEventObserver,
   type LtiLaunchVerificationFailureContext,
   type LtiLaunchVerificationFailureResponse,
+  type VerifyLaunchEventOptions,
 } from './launchFlow.js';
 export { deepLinkRouteHandler } from './routes/deepLink.route.js';
 export {

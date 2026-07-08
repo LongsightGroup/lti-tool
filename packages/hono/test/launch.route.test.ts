@@ -1,6 +1,13 @@
-import { createNoopLogger, LtiLaunchVerificationError } from '@longsightgroup/lti-tool';
+import {
+  createNoopLogger,
+  LtiLaunchVerificationError,
+  type LtiLaunchVerificationEvent,
+} from '@longsightgroup/lti-tool';
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
+
+import { testSession } from '#test-harness/fixtures';
+import { testVerifiedLaunch } from '#test-harness/testing';
 
 import type { LtiLaunchRouteDeps } from '../src/ltiRouteDeps.js';
 import { launchRouteHandler } from '../src/ltiRoutes/routes/launch.route.js';
@@ -60,5 +67,43 @@ describe('launchRouteHandler', () => {
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Internal server error' });
     expect(createSessionFromVerifiedLaunch).not.toHaveBeenCalled();
+  });
+
+  it('passes verification events with Hono context', async () => {
+    const launch = testVerifiedLaunch();
+    const seenEvents: Array<{
+      readonly path: string;
+      readonly event: LtiLaunchVerificationEvent;
+    }> = [];
+    const response = await requestLaunch({
+      verifyLaunch: (_idToken, _state, options) => {
+        options?.onVerificationEvent?.({
+          type: 'launch_verified',
+          issuer: launch.issuer,
+          clientId: launch.clientId,
+          deploymentId: launch.deploymentId,
+        });
+
+        return Promise.resolve({ success: true, launch });
+      },
+      createSessionFromVerifiedLaunch: () => Promise.resolve(testSession()),
+      onVerificationEvent: ({ hono, event }) => {
+        seenEvents.push({ path: hono.req.path, event });
+      },
+      logger: createNoopLogger(),
+    });
+
+    expect(response.status).toBe(302);
+    expect(seenEvents).toEqual([
+      {
+        path: '/lti/launch',
+        event: {
+          type: 'launch_verified',
+          issuer: 'https://platform.example.com',
+          clientId: 'oauth-client-id',
+          deploymentId: 'platform-deployment-id',
+        },
+      },
+    ]);
   });
 });

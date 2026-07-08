@@ -2,6 +2,10 @@ import type { DynamicRegistrationAppState } from '../schemas/lti13/dynamicRegist
 import type { LTIMessage } from '../schemas/lti13/dynamicRegistration/ltiMessages.schema.js';
 import type { OpenIDConfiguration } from '../schemas/lti13/dynamicRegistration/openIDConfiguration.schema.js';
 import type { ToolRegistrationPayload } from '../schemas/lti13/dynamicRegistration/toolRegistrationPayload.schema.js';
+import type {
+  LtiLaunchVerificationEventObserver,
+  LtiRemoteJwksOptions,
+} from '../utils/ltiLaunchVerification.js';
 
 import type { LtiLogger } from './ltiLogger.js';
 import type { LTIStorage } from './ltiStorage.js';
@@ -115,6 +119,14 @@ export interface LTIConfig {
   /** Optional structured logger */
   logger?: LtiLogger;
 
+  /**
+   * Optional global observer for safe launch verification events.
+   *
+   * For request-local edge work, prefer the per-call verifyLaunch option so
+   * the framework layer can schedule asynchronous writes with waitUntil.
+   */
+  onVerificationEvent?: LtiLaunchVerificationEventObserver;
+
   /** Security configuration options */
   security?: {
     /** Key ID for JWKS and JWT signing (defaults to 'main') */
@@ -126,6 +138,8 @@ export interface LTIConfig {
      * audiences besides this tool's client ID. Most tools should leave this unset.
      */
     trustedAudiences?: string[];
+    /** Remote JWKS fetch and cache bounds used during launch verification. */
+    remoteJwks?: LtiRemoteJwksOptions;
   };
 
   /** Dynamic registration configuration for LTI 1.3 tool registration */

@@ -79,10 +79,21 @@ Mounts required LTI protocol routes (`/jwks`, `/login`, `/launch`) on a Hono sub
 ```typescript
 import { createLtiRoutes } from '@longsightgroup/lti-tool/hono';
 
-app.route('/lti', createLtiRoutes({ ltiTool, logger }));
+app.route(
+  '/lti',
+  createLtiRoutes({
+    ltiTool,
+    logger,
+    onVerificationEvent: ({ hono, event }) => {
+      hono.executionCtx.waitUntil(auditLaunchVerification(event));
+    },
+  }),
+);
 ```
 
 Mount deep linking and dynamic registration with their explicit route handlers when needed.
+Use `onVerificationEvent` to record safe launch verification audit events. In Workers,
+schedule asynchronous writes with `waitUntil`.
 
 ### customLaunchRouteHandler(options)
 
@@ -102,6 +113,9 @@ app.post(
     logger,
     authorizeLaunch: (launch) => ({ success: true, data: { tenantId: 'tenant-1' } }),
     onVerifiedLaunch: ({ session }) => auditLaunch(session),
+    onVerificationEvent: ({ hono, event }) => {
+      hono.executionCtx.waitUntil(auditLaunchVerification(event));
+    },
     onVerificationFailure: (context) =>
       context.error.code === 'launch_config_missing_jwks_endpoint'
         ? context.hono.json({ error: 'Platform registration incomplete' }, 501)

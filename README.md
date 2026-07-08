@@ -156,10 +156,20 @@ Implement the `LTIStorage` interface yourself if you need Redis, another databas
 `createLtiRoutes` mounts the standard LTI protocol endpoints on a Hono sub-app:
 
 ```typescript
-app.route('/lti', createLtiRoutes({ ltiTool }));
+app.route(
+  '/lti',
+  createLtiRoutes({
+    ltiTool,
+    onVerificationEvent: ({ hono, event }) => {
+      hono.executionCtx.waitUntil(auditLaunchVerification(event));
+    },
+  }),
+);
 ```
 
 This registers `/lti/jwks`, `/lti/login` (GET and POST), and `/lti/launch` (POST).
+Use `onVerificationEvent` to record safe launch verification audit events from the
+framework layer. In Workers, schedule asynchronous writes with `waitUntil`.
 
 For app-owned launch UI, use `customLaunchRouteHandler`. It performs form parsing,
 launch verification, session creation, and launch-message resolution, then calls your
@@ -177,6 +187,9 @@ app.post(
   customLaunchRouteHandler({
     ltiTool,
     logger,
+    onVerificationEvent: ({ hono, event }) => {
+      hono.executionCtx.waitUntil(auditLaunchVerification(event));
+    },
     onVerificationFailure: (context) =>
       context.error.code === 'launch_config_missing_jwks_endpoint'
         ? context.hono.json({ error: 'Platform registration incomplete' }, 501)

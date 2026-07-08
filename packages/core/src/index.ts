@@ -65,11 +65,22 @@ export {
 } from './utils/ltiLaunchMessage.js';
 export {
   LtiLaunchVerificationError,
+  notifyLaunchVerificationEvent,
+  type LtiAuthorizeVerifiedLaunchOptions,
   type LtiAuthorizedLaunch,
+  type LtiLaunchIdentity,
+  type LtiLaunchJwksKidMissRefetchEvent,
+  type LtiLaunchVerificationEvent,
+  type LtiLaunchVerificationEventObserver,
   type LtiLaunchVerificationErrorCode,
+  type LtiLaunchVerificationFailedEvent,
   type LtiLaunchVerificationResult,
+  type LtiLaunchVerifiedEvent,
+  type LtiRemoteJwksOptions,
   type LtiVerifiedLaunch,
+  type LtiVerifiedLaunchAuthorizer,
   type LtiVerifiedLaunchAuthorizationResult,
+  type LtiVerifyLaunchEventOptions,
   type LtiVerifyLaunchOptions,
 } from './utils/ltiLaunchVerification.js';
 export {

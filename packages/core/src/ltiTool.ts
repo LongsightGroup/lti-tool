@@ -12,12 +12,16 @@ import { formatError } from './utils/errorFormatting.js';
 import { getValidLaunchConfig } from './utils/launchConfigValidation.js';
 import {
   authorizeVerifiedLaunch,
+  type LtiAuthorizeVerifiedLaunchOptions,
   type LtiLaunchJwksCache,
   type LtiAuthorizedLaunch,
+  type LtiLaunchVerificationEventObserver,
   LtiLaunchVerificationError,
   type LtiLaunchVerificationResult,
+  type LtiVerifyLaunchEventOptions,
   type LtiVerifyLaunchOptions,
   type LtiVerifiedLaunch,
+  notifyLaunchVerificationEvent,
   verifyLtiLaunch,
 } from './utils/ltiLaunchVerification.js';
 import { buildLtiLoginAuthUrl } from './utils/ltiLogin.js';
@@ -133,12 +137,13 @@ export class LTITool {
   async verifyLaunch(
     idToken: string,
     state: string,
+    options?: LtiVerifyLaunchEventOptions,
   ): Promise<LtiLaunchVerificationResult>;
 
   async verifyLaunch<TAuthorization>(
     idToken: string,
     state: string,
-    options: LtiVerifyLaunchOptions<TAuthorization>,
+    options: LtiAuthorizeVerifiedLaunchOptions<TAuthorization>,
   ): Promise<LtiLaunchVerificationResult<LtiAuthorizedLaunch<TAuthorization>>>;
 
   async verifyLaunch<TAuthorization>(
@@ -146,28 +151,42 @@ export class LTITool {
     state: string,
     options?: LtiVerifyLaunchOptions<TAuthorization>,
   ): Promise<LtiLaunchVerificationResult> {
+    const onVerificationEvent = this.createVerificationEventObserver(
+      options?.onVerificationEvent,
+    );
+
     try {
-      const launch = await this.verifyLaunchInternal(idToken, state);
+      const launch = await this.verifyLaunchInternal(idToken, state, onVerificationEvent);
+
       if (!options?.authorizeVerifiedLaunch) {
+        this.notifyLaunchVerified(onVerificationEvent, launch);
         return { success: true, launch };
       }
 
+      const authorizedLaunch = await authorizeVerifiedLaunch(
+        launch,
+        options.authorizeVerifiedLaunch,
+      );
+      this.notifyLaunchVerified(onVerificationEvent, authorizedLaunch);
       return {
         success: true,
-        launch: await authorizeVerifiedLaunch(launch, options.authorizeVerifiedLaunch),
+        launch: authorizedLaunch,
       };
     } catch (error) {
       if (error instanceof LtiLaunchVerificationError) {
+        this.notifyLaunchFailed(onVerificationEvent, error);
         return { success: false, error };
       }
 
+      const verificationError = new LtiLaunchVerificationError(
+        'unknown_error',
+        `Launch verification failed: ${formatError(error)}`,
+        error,
+      );
+      this.notifyLaunchFailed(onVerificationEvent, verificationError);
       return {
         success: false,
-        error: new LtiLaunchVerificationError(
-          'unknown_error',
-          `Launch verification failed: ${formatError(error)}`,
-          error,
-        ),
+        error: verificationError,
       };
     }
   }
@@ -175,17 +194,56 @@ export class LTITool {
   private async verifyLaunchInternal(
     idToken: string,
     state: string,
+    onVerificationEvent: LtiLaunchVerificationEventObserver | undefined,
   ): Promise<LtiVerifiedLaunch> {
-    const launch = await verifyLtiLaunch({
+    return await verifyLtiLaunch({
       idToken,
       state,
       stateSecret: this.config.stateSecret,
       storage: this.config.storage,
       trustedAudiences: this.config.security?.trustedAudiences,
       jwksCache: this.jwksCache,
+      remoteJwks: this.config.security?.remoteJwks,
+      onVerificationEvent,
     });
+  }
 
-    return launch;
+  private createVerificationEventObserver(
+    requestObserver: LtiLaunchVerificationEventObserver | undefined,
+  ): LtiLaunchVerificationEventObserver | undefined {
+    const observers = [this.config.onVerificationEvent, requestObserver].filter(
+      (observer): observer is LtiLaunchVerificationEventObserver =>
+        observer !== undefined,
+    );
+    if (observers.length === 0) return undefined;
+
+    return (event) => {
+      for (const observer of observers) {
+        notifyLaunchVerificationEvent(observer, event);
+      }
+    };
+  }
+
+  private notifyLaunchVerified(
+    observer: LtiLaunchVerificationEventObserver | undefined,
+    launch: LtiVerifiedLaunch,
+  ): void {
+    notifyLaunchVerificationEvent(observer, {
+      type: 'launch_verified',
+      issuer: launch.issuer,
+      clientId: launch.clientId,
+      deploymentId: launch.deploymentId,
+    });
+  }
+
+  private notifyLaunchFailed(
+    observer: LtiLaunchVerificationEventObserver | undefined,
+    error: LtiLaunchVerificationError,
+  ): void {
+    notifyLaunchVerificationEvent(observer, {
+      type: 'launch_verification_failed',
+      code: error.code,
+    });
   }
 
   /**

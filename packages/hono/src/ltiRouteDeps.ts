@@ -8,11 +8,14 @@ import type {
   LtiLaunchVerificationResult,
   LtiLogger,
   LtiToolPort,
+  LtiVerifyLaunchOptions,
   LtiVerifiedLaunch,
   LTISession,
   RegistrationRequest,
 } from '@longsightgroup/lti-tool';
 import type { Context } from 'hono';
+
+import type { HonoLtiLaunchVerificationEventObserver } from './ltiRoutes/launchFlow.js';
 
 export type LtiJwksRouteDeps = {
   getJWKS: () => Promise<JWKS>;
@@ -25,8 +28,13 @@ export type LtiLoginRouteDeps = {
 };
 
 export type LtiLaunchRouteDeps = {
-  verifyLaunch: (idToken: string, state: string) => Promise<LtiLaunchVerificationResult>;
+  verifyLaunch: (
+    idToken: string,
+    state: string,
+    options?: Pick<LtiVerifyLaunchOptions, 'onVerificationEvent'>,
+  ) => Promise<LtiLaunchVerificationResult>;
   createSessionFromVerifiedLaunch: (launch: LtiVerifiedLaunch) => Promise<LTISession>;
+  onVerificationEvent?: HonoLtiLaunchVerificationEventObserver;
   logger: LtiLogger;
 };
 

@@ -19,6 +19,7 @@ import {
   LtiLaunchVerificationError,
   type LTIConfig,
   type LTIStorage,
+  type LtiLaunchVerificationEvent,
   type LtiVerifiedLaunch,
 } from '../src/index.js';
 import { LTITool } from '../src/ltiTool.js';
@@ -255,6 +256,7 @@ describe('LTI Integration Tests', () => {
 
   describe('JWT Verification', () => {
     it('refreshes JWKS and retries once on ERR_JWKS_NO_MATCHING_KEY', async () => {
+      const events: LtiLaunchVerificationEvent[] = [];
       const ltiPayload = createMockLTIPayload({
         nonce: 'test-nonce',
       });
@@ -293,8 +295,13 @@ describe('LTI Integration Tests', () => {
         .mockRejectedValueOnce(kidMissError as any)
         .mockResolvedValueOnce({ payload: ltiPayload } as any);
 
-      const launch = await verifyLaunchOrThrow(idToken, 'state-token');
+      const result = await ltiTool.verifyLaunch(idToken, 'state-token', {
+        onVerificationEvent: (event) => events.push(event),
+      });
 
+      expect(result.success).toBe(true);
+      if (!result.success) throw new Error('Expected launch verification success');
+      const { launch } = result;
       expect(launch.payload).toEqual(ltiPayload);
       expect(createRemoteJWKSet).toHaveBeenCalledTimes(2);
       expect(jwtVerify).toHaveBeenCalledTimes(3);
@@ -305,6 +312,84 @@ describe('LTI Integration Tests', () => {
         audience: 'client123',
       });
       expect(mockStorage.validateNonce).toHaveBeenCalledWith('test-nonce');
+      expect(events).toEqual([
+        {
+          type: 'jwks_kid_miss_refetch',
+          issuer: 'https://platform.example.com',
+          clientId: 'client123',
+          deploymentId: 'deployment1',
+          jwksUrl: 'https://platform.example.com/.well-known/jwks',
+        },
+        {
+          type: 'launch_verified',
+          issuer: 'https://platform.example.com',
+          clientId: 'client123',
+          deploymentId: 'deployment1',
+        },
+      ]);
+    });
+
+    it('emits JWKS refetch events before later verification failures', async () => {
+      const events: LtiLaunchVerificationEvent[] = [];
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const idTokenPayload = {
+        iss: 'https://platform.example.com',
+        aud: 'client123',
+        nonce: 'test-nonce',
+        [LTI_CLAIM_DEPLOYMENT_ID]: 'deployment1',
+      };
+      const idToken = [
+        Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'rotated-kid' })).toString(
+          'base64url',
+        ),
+        Buffer.from(JSON.stringify(idTokenPayload)).toString('base64url'),
+        'signature',
+      ].join('.');
+
+      const staleJwks = vi.fn();
+      const freshJwks = vi.fn();
+      vi.mocked(createRemoteJWKSet)
+        .mockReturnValueOnce(staleJwks as any)
+        .mockReturnValueOnce(freshJwks as any);
+
+      const kidMissError = Object.assign(new Error('No matching key in JWKS'), {
+        code: 'ERR_JWKS_NO_MATCHING_KEY',
+      });
+      vi.mocked(jwtVerify)
+        .mockResolvedValueOnce({
+          payload: {
+            nonce: 'test-nonce',
+            iss: 'https://platform.example.com',
+            client_id: 'client123',
+            target_link_uri: 'https://tool.example.com/content',
+          },
+        } as any)
+        .mockRejectedValueOnce(kidMissError as any)
+        .mockResolvedValueOnce({ payload: ltiPayload } as any);
+      vi.mocked(mockStorage.validateNonce).mockResolvedValue(false);
+
+      const result = await ltiTool.verifyLaunch(idToken, 'state-token', {
+        onVerificationEvent: (event) => events.push(event),
+      });
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected launch verification failure');
+      expect(result.error.code).toBe('nonce_replay');
+      expect(events).toEqual([
+        {
+          type: 'jwks_kid_miss_refetch',
+          issuer: 'https://platform.example.com',
+          clientId: 'client123',
+          deploymentId: 'deployment1',
+          jwksUrl: 'https://platform.example.com/.well-known/jwks',
+        },
+        {
+          type: 'launch_verification_failed',
+          code: 'nonce_replay',
+        },
+      ]);
     });
 
     it('successfully verifies valid LTI launch JWT', async () => {
@@ -353,6 +438,122 @@ describe('LTI Integration Tests', () => {
       expect(result.launch.clientId).toBe('client123');
       expect(result.launch.deploymentId).toBe('deployment1');
       expect(result.launch.targetLinkUri).toBe('https://tool.example.com/content');
+    });
+
+    it('emits launch verification success events', async () => {
+      const events: LtiLaunchVerificationEvent[] = [];
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
+
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt, {
+        onVerificationEvent: (event) => events.push(event),
+      });
+
+      expect(result.success).toBe(true);
+      expect(events).toEqual([
+        {
+          type: 'launch_verified',
+          issuer: 'https://platform.example.com',
+          clientId: 'client123',
+          deploymentId: 'deployment1',
+        },
+      ]);
+    });
+
+    it('emits configured launch verification events', async () => {
+      const events: LtiLaunchVerificationEvent[] = [];
+      ltiTool = new LTITool({
+        keyPair,
+        stateSecret,
+        storage: mockStorage,
+        onVerificationEvent: (event) => events.push(event),
+        security: {
+          keyId: 'test-key',
+          stateExpirationSeconds: 300,
+        },
+      });
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
+
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt);
+
+      expect(result.success).toBe(true);
+      expect(events).toEqual([
+        {
+          type: 'launch_verified',
+          issuer: 'https://platform.example.com',
+          clientId: 'client123',
+          deploymentId: 'deployment1',
+        },
+      ]);
+    });
+
+    it('emits launch verification failure events', async () => {
+      const events: LtiLaunchVerificationEvent[] = [];
+
+      const result = await ltiTool.verifyLaunch('', '', {
+        onVerificationEvent: (event) => events.push(event),
+      });
+
+      expect(result.success).toBe(false);
+      expect(events).toEqual([
+        {
+          type: 'launch_verification_failed',
+          code: 'invalid_launch_parameters',
+        },
+      ]);
+    });
+
+    it('keeps observer failures isolated from launch verification', async () => {
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
+
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt, {
+        onVerificationEvent: () => {
+          throw new Error('audit unavailable');
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('passes remote JWKS bounds to jose', async () => {
+      ltiTool = new LTITool({
+        keyPair,
+        stateSecret,
+        storage: mockStorage,
+        security: {
+          keyId: 'test-key',
+          stateExpirationSeconds: 300,
+          remoteJwks: {
+            cooldownDuration: 1_000,
+            cacheMaxAge: 60_000,
+            timeoutDuration: 2_000,
+          },
+        },
+      });
+      const ltiPayload = createMockLTIPayload({
+        nonce: 'test-nonce',
+      });
+      const { jwt, stateJwt } = await signLaunchAndState(ltiPayload);
+
+      const result = await ltiTool.verifyLaunch(jwt, stateJwt);
+
+      expect(result.success).toBe(true);
+      expect(createRemoteJWKSet).toHaveBeenCalledWith(
+        new URL('https://platform.example.com/.well-known/jwks'),
+        {
+          cooldownDuration: 1_000,
+          cacheMaxAge: 60_000,
+          timeoutDuration: 2_000,
+        },
+      );
     });
 
     it('creates sessions directly from verified multi-audience launches', async () => {
@@ -414,6 +615,7 @@ describe('LTI Integration Tests', () => {
     });
 
     it('reports verified launch authorization failures distinctly', async () => {
+      const events: LtiLaunchVerificationEvent[] = [];
       const ltiPayload = createMockLTIPayload({
         nonce: 'test-nonce',
       });
@@ -421,16 +623,23 @@ describe('LTI Integration Tests', () => {
 
       const result = await ltiTool.verifyLaunch(jwt, stateJwt, {
         authorizeVerifiedLaunch: () => ({
-          success: false,
+          success: false as const,
           code: 'installation_not_authorized',
           message: 'Installation is not enabled for this app',
         }),
+        onVerificationEvent: (event) => events.push(event),
       });
 
       expect(result.success).toBe(false);
       if (result.success) throw new Error('Expected launch authorization failure');
       expect(result.error.code).toBe('verified_launch_authorization_failed');
       expect(result.error.message).toBe('Installation is not enabled for this app');
+      expect(events).toEqual([
+        {
+          type: 'launch_verification_failed',
+          code: 'verified_launch_authorization_failed',
+        },
+      ]);
     });
 
     it('returns structured launch verification errors', async () => {
