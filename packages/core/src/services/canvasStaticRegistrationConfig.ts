@@ -19,19 +19,20 @@ import type { DynamicRegistrationAppState } from '../schemas/lti13/dynamicRegist
 import type { DynamicRegistrationSelectedService } from '../schemas/lti13/dynamicRegistration/ltiDynamicRegistration.schema.js';
 import type { LTIMessage } from '../schemas/lti13/dynamicRegistration/ltiMessages.schema.js';
 import type { OpenIDConfiguration } from '../schemas/lti13/dynamicRegistration/openIDConfiguration.schema.js';
+import { resolveCanvasPlatformBinding } from '../utils/canvasPlatformBinding.js';
 
 import { buildToolRegistrationPayload } from './dynamicRegistrationPayload.js';
 
-const CANVAS_CLOUD_ISSUER = 'https://canvas.instructure.com';
 const CANVAS_CLOUD_PLATFORM = 'canvas.instructure.com';
 const CANVAS_PRIVACY_LEVEL_CLAIM = 'https://canvas.instructure.com/lti/privacy_level';
 const CANVAS_TOOL_ID_CLAIM = 'https://canvas.instructure.com/lti/tool_id';
+const CANVAS_PRODUCTION_BINDING = resolveCanvasPlatformBinding('production');
 const CANVAS_STATIC_OPEN_ID_CONFIGURATION: OpenIDConfiguration = {
-  issuer: CANVAS_CLOUD_ISSUER,
-  authorization_endpoint: 'https://sso.canvaslms.com/api/lti/authorize_redirect',
+  issuer: CANVAS_PRODUCTION_BINDING.iss,
+  authorization_endpoint: CANVAS_PRODUCTION_BINDING.authUrl,
   registration_endpoint: 'https://sso.canvaslms.com/api/lti/registrations',
-  jwks_uri: 'https://sso.canvaslms.com/api/lti/security/jwks',
-  token_endpoint: 'https://sso.canvaslms.com/login/oauth2/token',
+  jwks_uri: CANVAS_PRODUCTION_BINDING.jwksUrl,
+  token_endpoint: CANVAS_PRODUCTION_BINDING.tokenUrl,
   token_endpoint_auth_methods_supported: ['private_key_jwt'],
   token_endpoint_auth_signing_alg_values_supported: ['RS256'],
   scopes_supported: [

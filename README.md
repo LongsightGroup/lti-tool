@@ -146,6 +146,22 @@ await upsertLaunchRegistration(ltiConfig.storage, {
 
 `upsertLaunchRegistration` creates or updates the client and deployment, then refreshes the cached launch config used during launch verification. Call it again when endpoints or deployment metadata change.
 
+For Canvas Cloud, derive the issuer and platform endpoints from the Canvas environment:
+
+```typescript
+import {
+  resolveCanvasPlatformBinding,
+  upsertLaunchRegistration,
+} from '@longsightgroup/lti-tool';
+
+await upsertLaunchRegistration(storage, {
+  name: 'Canvas',
+  clientId: 'your-client-id',
+  deploymentId: 'your-deployment-id',
+  ...resolveCanvasPlatformBinding('production'),
+});
+```
+
 For self-service administrator registration, use `LtiDynamicRegistration` instead of hand-copying IDs.
 
 ## Package exports

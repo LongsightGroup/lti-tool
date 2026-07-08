@@ -8,6 +8,11 @@ export {
   parseLtiDeepLinkingSettings,
 } from './utils/deepLinkingSettings.js';
 export {
+  resolveCanvasPlatformBinding,
+  type CanvasCloudEnvironment,
+  type CanvasPlatformBinding,
+} from './utils/canvasPlatformBinding.js';
+export {
   createLtiResourceLinkContentItem,
   LtiContentItemConstructionError,
   type CreateLtiResourceLinkContentItemInput,

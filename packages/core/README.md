@@ -93,6 +93,23 @@ schedule asynchronous audit writes with the platform's background-work primitive
 
 Use `upsertLaunchRegistration` whenever an LMS administrator gives you issuer, client ID, deployment ID, and OIDC endpoints. For self-service registration, use `LtiDynamicRegistration`. Custom admin UIs that manage stored client or deployment records directly should call `LTIStorage` methods instead of `LTITool`.
 
+For Canvas Cloud, derive the issuer and launch endpoints from the Canvas
+environment:
+
+```typescript
+import {
+  resolveCanvasPlatformBinding,
+  upsertLaunchRegistration,
+} from '@longsightgroup/lti-tool';
+
+await upsertLaunchRegistration(storage, {
+  name: 'Canvas',
+  clientId: 'your-client-id',
+  deploymentId: 'your-deployment-id',
+  ...resolveCanvasPlatformBinding('production'),
+});
+```
+
 Canvas administrators who need Developer Key **Paste JSON** can reuse the same
 dynamic registration config:
 
