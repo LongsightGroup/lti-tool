@@ -1,29 +1,13 @@
+import type * as z from 'zod';
+
 import type { DeepLinkingLtiResourceLink } from '../schemas/index.js';
 import { LtiResourceLinkSchema } from '../schemas/lti13/deepLinking/contentItem.schema.js';
 
-export interface CreateLtiResourceLinkContentItemInput {
-  title?: string;
-  text?: string;
-  url?: string;
-  window?: {
-    targetName?: string;
-    width?: number;
-    height?: number;
-    windowFeatures?: string;
-  };
-  iframe?: {
-    width?: number;
-    height?: number;
-  };
-  custom?: Record<string, string>;
-  lineItem?: {
-    label?: string;
-    scoreMaximum: number;
-    resourceId?: string;
-    tag?: string;
-    gradesReleased?: boolean;
-  };
-}
+/** Input for building an LTI Resource Link content item; `type` is fixed by the builder. */
+export type CreateLtiResourceLinkContentItemInput = Omit<
+  z.input<typeof LtiResourceLinkSchema>,
+  'type'
+>;
 
 export class LtiContentItemConstructionError extends Error {
   constructor(
@@ -42,14 +26,8 @@ export const createLtiResourceLinkContentItem = (
   input: CreateLtiResourceLinkContentItemInput,
 ): DeepLinkingLtiResourceLink => {
   const item = {
+    ...input,
     type: 'ltiResourceLink' as const,
-    ...(input.title === undefined ? {} : { title: input.title }),
-    ...(input.text === undefined ? {} : { text: input.text }),
-    ...(input.url === undefined ? {} : { url: input.url }),
-    ...(input.window === undefined ? {} : { window: input.window }),
-    ...(input.iframe === undefined ? {} : { iframe: input.iframe }),
-    ...(input.custom === undefined ? {} : { custom: input.custom }),
-    ...(input.lineItem === undefined ? {} : { lineItem: input.lineItem }),
   };
   const parsed = LtiResourceLinkSchema.safeParse(item);
 
