@@ -52,6 +52,12 @@ const LtiResourceLinkIframeSchema = z.object({
   height: z.number().optional(),
 });
 
+const PresentationDocumentTargetSchema = z.enum(['embed', 'iframe', 'window']);
+
+const ContentItemPresentationSchema = z.object({
+  documentTarget: PresentationDocumentTargetSchema,
+});
+
 /**
  * Zod schema for LTI Resource Link content item.
  * Represents a launchable LTI tool resource that can be embedded in the platform.
@@ -59,6 +65,7 @@ const LtiResourceLinkIframeSchema = z.object({
  * @property type - Always 'ltiResourceLink' for this content type
  * @property url - Optional launch URL for the resource
  * @property custom - Optional custom parameters passed to the tool on launch
+ * @property presentation - Optional preferred document target for platforms that consume it
  * @property lineItem - Optional gradebook column configuration for this resource
  * @property available - Optional availability window with start/end dates
  * @property submission - Optional submission window with start/end dates
@@ -70,6 +77,7 @@ export const LtiResourceLinkSchema = BaseContentItemSchema.extend({
   url: z.url().optional(),
   window: WindowTargetSchema.optional(),
   iframe: LtiResourceLinkIframeSchema.optional(),
+  presentation: ContentItemPresentationSchema.optional(),
   custom: z.record(z.string(), z.string()).optional(),
   lineItem: z
     .object({

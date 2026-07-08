@@ -283,6 +283,9 @@ Deep Linking launches expose normalized platform settings at
 `session.services.deepLinking`, including `acceptTypes`,
 `acceptPresentationDocumentTargets`, and optional `acceptLineItem` support for
 platforms that allow returned resource links to include AGS line item metadata.
+Resource link content items built with `createLtiResourceLinkContentItem` can
+include standard `window` and `iframe` presentation options plus
+`presentation.documentTarget` when a platform expects that field.
 
 For routes that need an HTTP response directly, call
 `createDeepLinkingHtmlResponse(contentItems)` for a typed `LtiServiceResult<Response>`

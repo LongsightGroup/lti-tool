@@ -97,6 +97,35 @@ describe('Deep Linking content items', () => {
     });
   });
 
+  it('preserves ltiResourceLink presentation document target', () => {
+    expect(
+      createLtiResourceLinkContentItem({
+        title: 'Project',
+        presentation: {
+          documentTarget: 'iframe',
+        },
+      }),
+    ).toEqual({
+      type: 'ltiResourceLink',
+      title: 'Project',
+      presentation: {
+        documentTarget: 'iframe',
+      },
+    });
+  });
+
+  it('rejects invalid ltiResourceLink presentation document targets', () => {
+    expect(() =>
+      ContentItemSchema.parse({
+        type: 'ltiResourceLink',
+        title: 'Project',
+        presentation: {
+          documentTarget: 'frame',
+        },
+      }),
+    ).toThrow();
+  });
+
   it('preserves ltiResourceLink extension properties through the builder', () => {
     const platformExtensionProperty =
       'https://platform.example.com/spec/lti-dl/displayMode';
