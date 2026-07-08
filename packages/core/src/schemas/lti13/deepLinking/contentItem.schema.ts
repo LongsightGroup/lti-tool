@@ -30,6 +30,24 @@ const BaseContentItemSchema = z.object({
     .optional(),
 });
 
+const WindowTargetSchema = z.object({
+  targetName: z.string().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  windowFeatures: z.string().optional(),
+});
+
+const LinkIframeSchema = z.object({
+  src: z.url(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+});
+
+const LtiResourceLinkIframeSchema = z.object({
+  width: z.number().optional(),
+  height: z.number().optional(),
+});
+
 /**
  * Zod schema for LTI Resource Link content item.
  * Represents a launchable LTI tool resource that can be embedded in the platform.
@@ -46,6 +64,8 @@ const BaseContentItemSchema = z.object({
 export const LtiResourceLinkSchema = BaseContentItemSchema.extend({
   type: z.literal('ltiResourceLink'),
   url: z.url().optional(),
+  window: WindowTargetSchema.optional(),
+  iframe: LtiResourceLinkIframeSchema.optional(),
   custom: z.record(z.string(), z.string()).optional(),
   lineItem: z
     .object({
@@ -90,19 +110,8 @@ export const LinkSchema = BaseContentItemSchema.extend({
       html: z.string(),
     })
     .optional(),
-  window: z
-    .object({
-      targetName: z.string().optional(),
-      windowFeatures: z.string().optional(),
-    })
-    .optional(),
-  iframe: z
-    .object({
-      width: z.number().optional(),
-      height: z.number().optional(),
-      src: z.url(),
-    })
-    .optional(),
+  window: WindowTargetSchema.optional(),
+  iframe: LinkIframeSchema.optional(),
 });
 
 /**

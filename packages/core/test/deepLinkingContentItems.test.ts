@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ContentItemSchema,
   LtiContentItemConstructionError,
   createLtiResourceLinkContentItem,
 } from '../src/index.js';
@@ -61,6 +62,71 @@ describe('Deep Linking content item builders', () => {
       title: 'Project',
       lineItem: {
         scoreMaximum: 100,
+      },
+    });
+  });
+
+  it('preserves ltiResourceLink presentation options', () => {
+    expect(
+      createLtiResourceLinkContentItem({
+        title: 'Project',
+        window: {
+          targetName: 'project-window',
+          width: 800,
+          height: 600,
+          windowFeatures: 'noopener',
+        },
+        iframe: {
+          width: 640,
+          height: 480,
+        },
+      }),
+    ).toEqual({
+      type: 'ltiResourceLink',
+      title: 'Project',
+      window: {
+        targetName: 'project-window',
+        width: 800,
+        height: 600,
+        windowFeatures: 'noopener',
+      },
+      iframe: {
+        width: 640,
+        height: 480,
+      },
+    });
+  });
+
+  it('preserves link window dimensions', () => {
+    const parsed = ContentItemSchema.parse({
+      type: 'link',
+      url: 'https://tool.example.com/content',
+      window: {
+        targetName: 'content-window',
+        width: 800,
+        height: 600,
+        windowFeatures: 'noopener',
+      },
+      iframe: {
+        src: 'https://tool.example.com/embed',
+        width: 640,
+        height: 480,
+      },
+    });
+
+    expect(parsed).toEqual({
+      type: 'link',
+      url: 'https://tool.example.com/content',
+      window: {
+        targetName: 'content-window',
+        width: 800,
+        height: 600,
+        windowFeatures: 'noopener',
+      },
+      iframe: {
+        src: 'https://tool.example.com/embed',
+        width: 640,
+        height: 480,
       },
     });
   });

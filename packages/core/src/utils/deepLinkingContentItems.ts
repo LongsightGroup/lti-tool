@@ -5,6 +5,16 @@ export interface CreateLtiResourceLinkContentItemInput {
   title?: string;
   text?: string;
   url?: string;
+  window?: {
+    targetName?: string;
+    width?: number;
+    height?: number;
+    windowFeatures?: string;
+  };
+  iframe?: {
+    width?: number;
+    height?: number;
+  };
   custom?: Record<string, string>;
   lineItem?: {
     label?: string;
@@ -36,6 +46,8 @@ export const createLtiResourceLinkContentItem = (
     ...(input.title === undefined ? {} : { title: input.title }),
     ...(input.text === undefined ? {} : { text: input.text }),
     ...(input.url === undefined ? {} : { url: input.url }),
+    ...(input.window === undefined ? {} : { window: input.window }),
+    ...(input.iframe === undefined ? {} : { iframe: input.iframe }),
     ...(input.custom === undefined ? {} : { custom: input.custom }),
     ...(input.lineItem === undefined ? {} : { lineItem: input.lineItem }),
   };
