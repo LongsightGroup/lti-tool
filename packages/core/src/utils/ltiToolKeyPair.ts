@@ -1,3 +1,7 @@
+import { calculateJwkThumbprint } from 'jose';
+
+import type { JWKS } from '../interfaces/jwks.js';
+
 const RS256_IMPORT_ALGORITHM = {
   name: 'RSASSA-PKCS1-v1_5',
   hash: 'SHA-256',
@@ -10,14 +14,28 @@ export type LtiToolKeyPairImportErrorCode =
 
 export interface LtiToolKeyMaterial {
   /** WebCrypto key pair suitable for LTI JWT signing and JWKS publication. */
-  keyPair: CryptoKeyPair;
-  /** Key identifier read from the private JWK's kid field. */
-  keyId: string;
+  readonly keyPair: CryptoKeyPair;
+  /** Key identifier read from the private JWK's kid field or derived from its public thumbprint. */
+  readonly keyId: string;
+  /** Public JWK matching the imported signing key. */
+  readonly publicJwk: LtiToolPublicJwk;
+  /** JWKS containing the public JWK matching the imported signing key. */
+  readonly jwks: JWKS;
 }
 
 export type LtiToolPrivateJwkInput = JsonWebKey & {
   /** Key identifier used in JWT headers and JWKS entries. */
   kid?: string;
+};
+
+export type LtiToolPublicJwk = JsonWebKey & {
+  readonly kty: 'RSA';
+  readonly n: string;
+  readonly e: string;
+  readonly alg: 'RS256';
+  readonly use: 'sig';
+  readonly kid: string;
+  readonly [key: string]: unknown;
 };
 
 /**
@@ -38,14 +56,20 @@ type RsaPrivateJwk = JsonWebKey & {
   n: string;
   e: string;
   d: string;
+  p: string;
+  q: string;
+  dp: string;
+  dq: string;
+  qi: string;
   kid: string;
 };
 
 /**
  * Imports an RSA private JWK into the CryptoKeyPair shape expected by LTIConfig.
  *
- * The returned keyId is the trimmed JWK kid value and should be passed to
- * LTIConfig.security.keyId so JWT headers and JWKS entries use the same key ID.
+ * The returned keyId is the trimmed JWK kid value, or a public JWK thumbprint
+ * when the input does not include kid. Pass it to LTIConfig.security.keyId so
+ * JWT headers and JWKS entries use the same key ID.
  *
  * @param input - Private RSA JWK object or JSON string containing the JWK
  * @returns Imported key pair plus the preserved key ID
@@ -54,8 +78,9 @@ type RsaPrivateJwk = JsonWebKey & {
 export async function importLtiToolKeyPairFromJwk(
   input: string | LtiToolPrivateJwkInput,
 ): Promise<LtiToolKeyMaterial> {
-  const privateJwk = parseRsaPrivateJwk(input);
-  const publicJwk: LtiToolPrivateJwkInput = {
+  const privateJwk = await parseRsaPrivateJwk(input);
+  const publicJwk = toPublicJwk(privateJwk);
+  const importPublicJwk: LtiToolPrivateJwkInput = {
     kty: privateJwk.kty,
     n: privateJwk.n,
     e: privateJwk.e,
@@ -81,12 +106,16 @@ export async function importLtiToolKeyPairFromJwk(
         false,
         ['sign'],
       ),
-      crypto.subtle.importKey('jwk', publicJwk, RS256_IMPORT_ALGORITHM, true, ['verify']),
+      crypto.subtle.importKey('jwk', importPublicJwk, RS256_IMPORT_ALGORITHM, true, [
+        'verify',
+      ]),
     ]);
 
     return {
       keyPair: { privateKey, publicKey },
       keyId: privateJwk.kid,
+      publicJwk,
+      jwks: { keys: [publicJwk] },
     };
   } catch (error) {
     throw new LtiToolKeyPairImportError(
@@ -97,7 +126,9 @@ export async function importLtiToolKeyPairFromJwk(
   }
 }
 
-function parseRsaPrivateJwk(input: string | LtiToolPrivateJwkInput): RsaPrivateJwk {
+async function parseRsaPrivateJwk(
+  input: string | LtiToolPrivateJwkInput,
+): Promise<RsaPrivateJwk> {
   const parsed = typeof input === 'string' ? parsePrivateJwkJson(input) : input;
 
   if (!isRecord(parsed)) {
@@ -108,16 +139,28 @@ function parseRsaPrivateJwk(input: string | LtiToolPrivateJwkInput): RsaPrivateJ
   const n = readNonEmptyString(parsed, 'n');
   const e = readNonEmptyString(parsed, 'e');
   const d = readNonEmptyString(parsed, 'd');
+  const p = readNonEmptyString(parsed, 'p');
+  const q = readNonEmptyString(parsed, 'q');
+  const dp = readNonEmptyString(parsed, 'dp');
+  const dq = readNonEmptyString(parsed, 'dq');
+  const qi = readNonEmptyString(parsed, 'qi');
 
   if (
     parsed.kty !== 'RSA' ||
     n === undefined ||
     e === undefined ||
     d === undefined ||
-    kid === undefined
+    p === undefined ||
+    q === undefined ||
+    dp === undefined ||
+    dq === undefined ||
+    qi === undefined
   ) {
     throw invalidPrivateJwk();
   }
+
+  const resolvedKid =
+    kid ?? (await calculateJwkThumbprint({ kty: 'RSA', n, e }, 'sha256'));
 
   return {
     ...parsed,
@@ -125,7 +168,23 @@ function parseRsaPrivateJwk(input: string | LtiToolPrivateJwkInput): RsaPrivateJ
     n,
     e,
     d,
-    kid,
+    p,
+    q,
+    dp,
+    dq,
+    qi,
+    kid: resolvedKid,
+  };
+}
+
+function toPublicJwk(privateJwk: RsaPrivateJwk): LtiToolPublicJwk {
+  return {
+    kty: privateJwk.kty,
+    n: privateJwk.n,
+    e: privateJwk.e,
+    alg: 'RS256',
+    use: 'sig',
+    kid: privateJwk.kid,
   };
 }
 
@@ -144,7 +203,7 @@ function parsePrivateJwkJson(input: string): unknown {
 function invalidPrivateJwk(): LtiToolKeyPairImportError {
   return new LtiToolKeyPairImportError(
     'invalid_private_jwk',
-    'LTI tool private JWK must be an RSA private JWK with a kid',
+    'LTI tool private JWK must be an RSA private JWK with private key parameters',
   );
 }
 

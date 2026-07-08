@@ -1,5 +1,5 @@
-import { SignJWT, jwtVerify } from 'jose';
-import { describe, expect, it } from 'vitest';
+import { calculateJwkThumbprint, SignJWT, jwtVerify } from 'jose';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   importLtiToolKeyPairFromJwk,
@@ -7,7 +7,7 @@ import {
   type LtiToolPrivateJwkInput,
 } from '../src/index.js';
 
-const generatePrivateJwk = async (kid = 'test-key'): Promise<LtiToolPrivateJwkInput> => {
+const generatePrivateJwk = async (kid?: string): Promise<LtiToolPrivateJwkInput> => {
   const generatedKey = await crypto.subtle.generateKey(
     {
       name: 'RSASSA-PKCS1-v1_5',
@@ -23,10 +23,8 @@ const generatePrivateJwk = async (kid = 'test-key'): Promise<LtiToolPrivateJwkIn
     throw new Error('Expected an RSA key pair');
   }
 
-  return {
-    ...(await crypto.subtle.exportKey('jwk', generatedKey.privateKey)),
-    kid,
-  };
+  const privateJwk = await crypto.subtle.exportKey('jwk', generatedKey.privateKey);
+  return kid === undefined ? privateJwk : { ...privateJwk, kid };
 };
 
 describe('LTI tool key pair helpers', () => {
@@ -38,6 +36,16 @@ describe('LTI tool key pair helpers', () => {
     expect(result.keyId).toBe('tool-key-1');
     expect(result.keyPair.privateKey.type).toBe('private');
     expect(result.keyPair.publicKey.type).toBe('public');
+    expect(result.publicJwk).toMatchObject({
+      kty: 'RSA',
+      n: privateJwk.n,
+      e: privateJwk.e,
+      alg: 'RS256',
+      use: 'sig',
+      kid: 'tool-key-1',
+    });
+    expect(result.jwks).toEqual({ keys: [result.publicJwk] });
+    expect(result.publicJwk).not.toHaveProperty('d');
 
     const jwt = await new SignJWT({ sub: 'user-1' })
       .setProtectedHeader({ alg: 'RS256', kid: result.keyId })
@@ -54,6 +62,21 @@ describe('LTI tool key pair helpers', () => {
     const result = await importLtiToolKeyPairFromJwk(privateJwk);
 
     expect(result.keyId).toBe('tool-key-2');
+    expect(result.publicJwk.kid).toBe('tool-key-2');
+  });
+
+  it('derives the key ID from the public JWK thumbprint when kid is absent', async () => {
+    const privateJwk = await generatePrivateJwk(undefined);
+    const expectedKid = await calculateJwkThumbprint(
+      { kty: 'RSA', n: privateJwk.n, e: privateJwk.e },
+      'sha256',
+    );
+
+    const result = await importLtiToolKeyPairFromJwk(privateJwk);
+
+    expect(result.keyId).toBe(expectedKid);
+    expect(result.publicJwk.kid).toBe(expectedKid);
+    expect(result.jwks.keys).toEqual([result.publicJwk]);
   });
 
   it('rejects invalid JWK JSON without echoing the input', async () => {
@@ -64,38 +87,34 @@ describe('LTI tool key pair helpers', () => {
     });
   });
 
-  it('rejects non-RSA or missing-kid private JWKs', async () => {
+  it('rejects non-RSA or incomplete private JWKs', async () => {
     await expect(
       importLtiToolKeyPairFromJwk({ kty: 'RSA', n: 'n', e: 'e', d: 'd' }),
     ).rejects.toMatchObject({
       name: 'LtiToolKeyPairImportError',
       code: 'invalid_private_jwk',
-      message: 'LTI tool private JWK must be an RSA private JWK with a kid',
+      message:
+        'LTI tool private JWK must be an RSA private JWK with private key parameters',
     });
   });
 
   it('wraps WebCrypto import failures in a typed error', async () => {
-    await expect(
-      importLtiToolKeyPairFromJwk({
-        kty: 'RSA',
-        n: 'not-valid-key-material',
-        e: 'AQAB',
-        d: 'not-valid-key-material',
-        kid: 'bad-key',
-      }),
-    ).rejects.toBeInstanceOf(LtiToolKeyPairImportError);
+    const privateJwk = await generatePrivateJwk('bad-key');
+    const importKeySpy = vi
+      .spyOn(crypto.subtle, 'importKey')
+      .mockRejectedValue(new DOMException('Rejected by WebCrypto'));
 
-    await expect(
-      importLtiToolKeyPairFromJwk({
-        kty: 'RSA',
-        n: 'not-valid-key-material',
-        e: 'AQAB',
-        d: 'not-valid-key-material',
-        kid: 'bad-key',
-      }),
-    ).rejects.toMatchObject({
-      code: 'key_import_failed',
-      message: 'LTI tool private JWK could not be imported as an RS256 key pair',
-    });
+    try {
+      await expect(importLtiToolKeyPairFromJwk(privateJwk)).rejects.toBeInstanceOf(
+        LtiToolKeyPairImportError,
+      );
+
+      await expect(importLtiToolKeyPairFromJwk(privateJwk)).rejects.toMatchObject({
+        code: 'key_import_failed',
+        message: 'LTI tool private JWK could not be imported as an RS256 key pair',
+      });
+    } finally {
+      importKeySpy.mockRestore();
+    }
   });
 });

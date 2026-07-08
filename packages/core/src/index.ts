@@ -104,6 +104,7 @@ export {
   type LtiToolKeyMaterial,
   type LtiToolKeyPairImportErrorCode,
   type LtiToolPrivateJwkInput,
+  type LtiToolPublicJwk,
 } from './utils/ltiToolKeyPair.js';
 export {
   parsePersistedLtiDynamicRegistrationSession,

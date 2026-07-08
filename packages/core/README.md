@@ -52,6 +52,24 @@ if (result.success) {
 }
 ```
 
+Production tools usually load private key material from a secrets manager. Use
+`importLtiToolKeyPairFromJwk` when you store the tool key as RSA private JWK JSON:
+
+```typescript
+import { importLtiToolKeyPairFromJwk } from '@longsightgroup/lti-tool';
+
+const keyMaterial = await importLtiToolKeyPairFromJwk(privateJwkJson);
+const ltiTool = new LTITool({
+  stateSecret,
+  keyPair: keyMaterial.keyPair,
+  storage,
+  security: { keyId: keyMaterial.keyId },
+});
+```
+
+The helper trims an existing `kid` or derives one from the public key thumbprint,
+and returns `publicJwk` and `jwks` for custom keyset responses.
+
 Launch verification can emit safe audit events and tune remote JWKS fetch bounds:
 
 ```typescript

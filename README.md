@@ -81,7 +81,21 @@ app.get('/app', (c) => {
 
 After a successful launch, the library redirects the browser to your target URL with an `ltiSessionId` query parameter. Protected routes read that parameter to load the session.
 
-In production, load your RSA key pair and `stateSecret` from a secrets manager instead of generating them at startup. `MemoryStorage` is for development and tests only.
+In production, load your RSA private JWK and `stateSecret` from a secrets manager instead of generating them at startup. `importLtiToolKeyPairFromJwk` imports private RSA JWK JSON, preserves or derives the key ID, and returns the public JWKS material for custom keyset endpoints:
+
+```typescript
+import { importLtiToolKeyPairFromJwk } from '@longsightgroup/lti-tool';
+
+const keyMaterial = await importLtiToolKeyPairFromJwk(privateJwkJson);
+const ltiConfig = {
+  stateSecret,
+  keyPair: keyMaterial.keyPair,
+  storage,
+  security: { keyId: keyMaterial.keyId },
+};
+```
+
+`MemoryStorage` is for development and tests only.
 
 ## How a launch works
 
