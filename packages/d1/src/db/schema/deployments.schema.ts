@@ -13,6 +13,7 @@ export const deploymentsTable = sqliteTable(
   LTI_TABLES.deployments,
   {
     id: text(LTI_COLUMNS.id).primaryKey(),
+    tenantId: text(LTI_COLUMNS.tenantId).notNull(),
     clientId: text(LTI_COLUMNS.clientId)
       .notNull()
       .references(() => clientsTable.id, { onDelete: 'cascade' }),
@@ -21,7 +22,7 @@ export const deploymentsTable = sqliteTable(
     description: text(LTI_COLUMNS.deploymentDescription),
   },
   (table) => [
-    index(LTI_INDEXES.deploymentsDeploymentId).on(table.deploymentId),
+    index(LTI_INDEXES.deploymentsDeploymentId).on(table.tenantId, table.deploymentId),
     uniqueIndex(LTI_UNIQUES.deploymentsClientDeployment).on(
       table.clientId,
       table.deploymentId,

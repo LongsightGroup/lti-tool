@@ -20,6 +20,7 @@ import { LTITool } from '@longsightgroup/lti-tool';
 
 const storage = new PostgresStorage({
   connectionUrl: process.env.DATABASE_URL!,
+  tenantId: process.env.LTI_TENANT_ID!,
 });
 
 const ltiTool = new LTITool({
@@ -57,6 +58,7 @@ changes.
 
 - **connectionUrl** (required): PostgreSQL connection URL
   Format: `postgresql://user:password@host:port/database`
+- **tenantId** (required): Tenant namespace bound to this storage instance
 - **poolOptions** (optional): postgres.js connection options
   - `max`: Max connections (auto: 1 for serverless, 10 for servers)
   - `idleTimeout`: Idle timeout in seconds before connection is closed (default: 20)
@@ -134,6 +136,7 @@ The adapter automatically detects your deployment environment:
 ```typescript
 const storage = new PostgresStorage({
   connectionUrl: process.env.DATABASE_URL!,
+  tenantId: process.env.LTI_TENANT_ID!,
   poolOptions: {
     max: 20, // Override auto-detection
     idleTimeout: 30, // Keep connections alive longer
@@ -150,6 +153,7 @@ import { PostgresStorage } from '@longsightgroup/lti-tool/storage/postgresql';
 
 export const storage = new PostgresStorage({
   connectionUrl: process.env.DATABASE_URL!,
+  tenantId: process.env.LTI_TENANT_ID!,
 });
 
 // Optional: Graceful shutdown
@@ -180,6 +184,7 @@ export const handler = async (event) => {
   if (!storage) {
     storage = new PostgresStorage({
       connectionUrl: process.env.DATABASE_URL!,
+      tenantId: process.env.LTI_TENANT_ID!,
       // Auto-detects Lambda, uses max: 1
     });
   }

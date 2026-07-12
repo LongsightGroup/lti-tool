@@ -40,7 +40,9 @@ export class PostgresStorage extends RelationalStorage {
         db,
         schema,
         sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
+        tenantId: config.tenantId,
       }),
+      tenantId: config.tenantId,
     });
 
     this.adapterLogger = logger;

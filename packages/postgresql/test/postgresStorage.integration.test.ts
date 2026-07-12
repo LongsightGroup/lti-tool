@@ -14,6 +14,10 @@ defineStorageConformanceSuite('PostgresStorage', {
     expiredRegistrationSessions: true,
   },
   createStorage: () => createPostgresHarness(),
+  tenantConformance: {
+    createTenantStorage: (tenantId) => createPostgresHarness(undefined, tenantId),
+    tenantScopedCleanup: true,
+  },
 });
 
 describe('PostgresStorage cleanup', () => {

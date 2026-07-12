@@ -16,9 +16,17 @@ type StorageCapabilities = {
   readonly expiredRegistrationSessions?: boolean;
 };
 
+type TenantConformance = {
+  readonly createTenantStorage: (
+    tenantId: string,
+  ) => StorageHarness | Promise<StorageHarness>;
+  readonly tenantScopedCleanup?: boolean;
+};
+
 type StorageFactory = {
   readonly createStorage: () => StorageHarness | Promise<StorageHarness>;
   readonly capabilities?: StorageCapabilities;
+  readonly tenantConformance?: TenantConformance;
 };
 
 export function defineStorageConformanceSuite(
@@ -32,6 +40,7 @@ export function defineStorageConformanceSuite(
     defineNonceConformance(factory);
     defineLaunchConfigConformance(factory);
     defineRegistrationSessionConformance(factory);
+    defineTenantIsolationConformance(factory);
   });
 }
 
@@ -112,6 +121,99 @@ function defineRegistrationSessionConformance(factory: StorageFactory): void {
 
   it('does not retrieve expired registration sessions', () =>
     withStorage(factory, assertExpiredRegistrationSessionContract));
+}
+
+function defineTenantIsolationConformance(factory: StorageFactory): void {
+  const tenantConformance = factory.tenantConformance;
+  if (tenantConformance === undefined) return;
+
+  it('isolates client data across tenant-bound storage instances', () =>
+    withTenantPair(tenantConformance, async (tenantA, tenantB) => {
+      const clientId = await tenantA.storage.addClient(testClient());
+      await expect(tenantB.storage.getClientById(clientId)).resolves.toBeUndefined();
+      await expect(tenantA.storage.getClientById(clientId)).resolves.toMatchObject({
+        id: clientId,
+      });
+    }));
+
+  it('keeps nonce namespaces independent per tenant', () =>
+    withTenantPair(tenantConformance, async (tenantA, tenantB) => {
+      await expect(tenantA.storage.validateNonce('shared-nonce')).resolves.toBe(true);
+      await expect(tenantB.storage.validateNonce('shared-nonce')).resolves.toBe(true);
+      await expect(tenantA.storage.validateNonce('shared-nonce')).resolves.toBe(false);
+    }));
+
+  it('keeps sessions with the same ID separate per tenant', () =>
+    withTenantPair(tenantConformance, assertTenantSessionIsolation));
+
+  it('upserts registration sessions with the same ID per tenant', () =>
+    withTenantPair(tenantConformance, assertTenantRegistrationSessionIsolation));
+
+  if (tenantConformance.tenantScopedCleanup !== true) return;
+
+  it('scopes cleanup to the configured tenant', () =>
+    withTenantPair(tenantConformance, async (tenantA, tenantB) => {
+      expect(tenantA.seedExpiredNonce).toBeDefined();
+      expect(tenantB.seedExpiredNonce).toBeDefined();
+      expect('cleanup' in tenantA.storage).toBe(true);
+
+      await tenantA.seedExpiredNonce!('tenant-a-expired-nonce');
+      await tenantB.seedExpiredNonce!('tenant-b-expired-nonce');
+
+      const cleanup = (
+        tenantA.storage as StorageHarness['storage'] & {
+          cleanup: () => Promise<{ noncesDeleted: number }>;
+        }
+      ).cleanup;
+      const result = await cleanup.call(tenantA.storage);
+
+      expect(result.noncesDeleted).toBe(1);
+      await expect(tenantB.storage.validateNonce('tenant-b-expired-nonce')).resolves.toBe(
+        false,
+      );
+    }));
+}
+
+async function assertTenantSessionIsolation(
+  tenantA: StorageHarness,
+  tenantB: StorageHarness,
+): Promise<void> {
+  const sessionId = 'shared-session-id';
+  await tenantA.storage.addSession(
+    testSession({ id: sessionId, user: { id: 'tenant-a-user', roles: ['Learner'] } }),
+  );
+  await tenantB.storage.addSession(
+    testSession({ id: sessionId, user: { id: 'tenant-b-user', roles: ['Learner'] } }),
+  );
+
+  await expect(tenantA.storage.getSession(sessionId)).resolves.toMatchObject({
+    user: { id: 'tenant-a-user' },
+  });
+  await expect(tenantB.storage.getSession(sessionId)).resolves.toMatchObject({
+    user: { id: 'tenant-b-user' },
+  });
+}
+
+async function assertTenantRegistrationSessionIsolation(
+  tenantA: StorageHarness,
+  tenantB: StorageHarness,
+): Promise<void> {
+  const sessionId = 'shared-registration-session-id';
+  await tenantA.storage.setRegistrationSession(
+    sessionId,
+    testRegistrationSession({ registrationToken: 'tenant-a-token' }),
+  );
+  await tenantB.storage.setRegistrationSession(
+    sessionId,
+    testRegistrationSession({ registrationToken: 'tenant-b-token' }),
+  );
+
+  await expect(tenantA.storage.getRegistrationSession(sessionId)).resolves.toMatchObject({
+    registrationToken: 'tenant-a-token',
+  });
+  await expect(tenantB.storage.getRegistrationSession(sessionId)).resolves.toMatchObject({
+    registrationToken: 'tenant-b-token',
+  });
 }
 
 async function assertClientContract(storage: LTIStorage): Promise<void> {
@@ -405,5 +507,20 @@ async function withStorage(
     await assertion(harness);
   } finally {
     await harness.dispose();
+  }
+}
+
+async function withTenantPair(
+  tenantConformance: TenantConformance,
+  assertion: (tenantA: StorageHarness, tenantB: StorageHarness) => Promise<void>,
+): Promise<void> {
+  const tenantA = await tenantConformance.createTenantStorage('conformance-tenant-a');
+  const tenantB = await tenantConformance.createTenantStorage('conformance-tenant-b');
+  try {
+    await tenantA.reset();
+    await tenantB.reset();
+    await assertion(tenantA, tenantB);
+  } finally {
+    await Promise.all([tenantA.dispose(), tenantB.dispose()]);
   }
 }

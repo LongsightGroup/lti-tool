@@ -20,6 +20,7 @@ import { LTITool } from '@longsightgroup/lti-tool';
 
 const storage = new MySqlStorage({
   connectionUrl: process.env.DATABASE_URL!,
+  tenantId: process.env.LTI_TENANT_ID!,
 });
 
 const ltiTool = new LTITool({
@@ -56,6 +57,7 @@ and metadata. Run `npm run db:check:mysql` before finishing migration changes.
 
 - **connectionUrl** (required): MySQL connection URL
   Format: `mysql://user:password@host:port/database`
+- **tenantId** (required): Tenant namespace bound to this storage instance
 - **poolOptions** (optional): mysql2 pool configuration
   - `connectionLimit`: Max connections (auto: 1 for serverless, 10 for servers)
   - `queueLimit`: Max queued requests (default: 0 = unlimited)
@@ -133,6 +135,7 @@ The adapter automatically detects your deployment environment:
 ```typescript
 const storage = new MySqlStorage({
   connectionUrl: process.env.DATABASE_URL!,
+  tenantId: process.env.LTI_TENANT_ID!,
   poolOptions: {
     connectionLimit: 20, // Override auto-detection
   },
@@ -148,6 +151,7 @@ import { MySqlStorage } from '@longsightgroup/lti-tool/storage/mysql';
 
 export const storage = new MySqlStorage({
   connectionUrl: process.env.DATABASE_URL!,
+  tenantId: process.env.LTI_TENANT_ID!,
 });
 
 // Optional: Graceful shutdown
@@ -178,6 +182,7 @@ export const handler = async (event) => {
   if (!storage) {
     storage = new MySqlStorage({
       connectionUrl: process.env.DATABASE_URL!,
+      tenantId: process.env.LTI_TENANT_ID!,
       // Auto-detects Lambda, uses connectionLimit: 1
     });
   }

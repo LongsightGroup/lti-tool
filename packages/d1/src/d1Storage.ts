@@ -28,7 +28,9 @@ export class D1Storage extends RelationalStorage {
         db,
         schema,
         sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
+        tenantId: config.tenantId,
       }),
+      tenantId: config.tenantId,
     });
   }
 }

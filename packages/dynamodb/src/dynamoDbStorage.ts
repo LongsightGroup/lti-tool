@@ -47,6 +47,7 @@ export class DynamoDbStorage implements LTIStorage {
   private launchConfigTable: string;
   private ddbClient: DynamoDBClient;
   private nonceExpirationSeconds: number;
+  private tenantId: string;
 
   /**
    * Creates a new DynamoDB storage instance.
@@ -59,6 +60,7 @@ export class DynamoDbStorage implements LTIStorage {
     this.dataPlaneTable = config.dataPlaneTable;
     this.launchConfigTable = config.launchConfigTable;
     this.nonceExpirationSeconds = config.nonceExpirationSeconds ?? 600;
+    this.tenantId = config.tenantId;
     this.ddbClient = new DynamoDBClient();
   }
 
@@ -75,7 +77,7 @@ export class DynamoDbStorage implements LTIStorage {
           IndexName: 'GSI1',
           KeyConditionExpression: 'gsi1pk = :gsi1pk',
           ExpressionAttributeValues: marshall({
-            ':gsi1pk': 'Type#Client',
+            ':gsi1pk': this.tenantKey('Type#Client'),
           }),
           ExclusiveStartKey: lastEvaluatedKey,
           ReturnConsumedCapacity: 'TOTAL',
@@ -136,7 +138,7 @@ export class DynamoDbStorage implements LTIStorage {
     const clientData: Omit<DynamoLTIClient, 'deployments'> = {
       pk,
       sk: '#',
-      gsi1pk: 'Type#Client',
+      gsi1pk: this.tenantKey('Type#Client'),
       gsi1sk: `#${clientId}`,
       type: 'Client',
       id: clientId,
@@ -179,7 +181,7 @@ export class DynamoDbStorage implements LTIStorage {
     const updatedData = {
       pk,
       sk: '#',
-      gsi1pk: 'Type#Client',
+      gsi1pk: this.tenantKey('Type#Client'),
       gsi1sk: `#${clientId}`,
       type: 'Client',
       ...existingClientData,
@@ -533,7 +535,7 @@ export class DynamoDbStorage implements LTIStorage {
     this.logger.debug({ iss, clientId, deploymentId }, 'getting launch config');
 
     // check cache
-    const cacheKey = `${iss}#${clientId}#${deploymentId}`;
+    const cacheKey = this.tenantKey(`${iss}#${clientId}#${deploymentId}`);
     const cachedConfig = LAUNCH_CONFIG_CACHE.get(cacheKey);
     if (cachedConfig === undefinedLaunchConfigValue) {
       // we cached a cache miss, return undefined
@@ -549,7 +551,7 @@ export class DynamoDbStorage implements LTIStorage {
       new GetItemCommand({
         TableName: this.launchConfigTable,
         Key: marshall({
-          pk: `${iss}#${clientId}`,
+          pk: this.launchConfigKey(iss, clientId),
           sk: deploymentId,
         }),
         ReturnConsumedCapacity: 'TOTAL',
@@ -577,7 +579,7 @@ export class DynamoDbStorage implements LTIStorage {
         TableName: this.launchConfigTable,
         Item: marshall(
           {
-            pk: `${launchConfig.iss}#${launchConfig.clientId}`,
+            pk: this.launchConfigKey(launchConfig.iss, launchConfig.clientId),
             sk: launchConfig.deploymentId,
             ...launchConfig,
           },
@@ -589,7 +591,9 @@ export class DynamoDbStorage implements LTIStorage {
     this.logDynamoDbResult(result, 'save launch config');
 
     // Update cache
-    const cacheKey = `${launchConfig.iss}#${launchConfig.clientId}#${launchConfig.deploymentId}`;
+    const cacheKey = this.tenantKey(
+      `${launchConfig.iss}#${launchConfig.clientId}#${launchConfig.deploymentId}`,
+    );
     LAUNCH_CONFIG_CACHE.set(cacheKey, launchConfig);
   }
 
@@ -605,7 +609,7 @@ export class DynamoDbStorage implements LTIStorage {
         TableName: this.dataPlaneTable,
         Item: marshall(
           {
-            pk: `DYNREG#${sessionId}`,
+            pk: this.tenantKey(`DYNREG#${sessionId}`),
             sk: '#',
             ...session,
             ttl,
@@ -627,7 +631,7 @@ export class DynamoDbStorage implements LTIStorage {
       new GetItemCommand({
         TableName: this.dataPlaneTable,
         Key: marshall({
-          pk: `DYNREG#${sessionId}`,
+          pk: this.tenantKey(`DYNREG#${sessionId}`),
           sk: '#',
         }),
         ReturnConsumedCapacity: 'TOTAL',
@@ -660,7 +664,7 @@ export class DynamoDbStorage implements LTIStorage {
       new DeleteItemCommand({
         TableName: this.dataPlaneTable,
         Key: marshall({
-          pk: `DYNREG#${sessionId}`,
+          pk: this.tenantKey(`DYNREG#${sessionId}`),
           sk: '#',
         }),
         ReturnConsumedCapacity: 'TOTAL',
@@ -678,7 +682,7 @@ export class DynamoDbStorage implements LTIStorage {
       new DeleteItemCommand({
         TableName: this.launchConfigTable,
         Key: marshall({
-          pk: `${issuer}#${clientId}`,
+          pk: this.launchConfigKey(issuer, clientId),
           sk: deploymentId,
         }),
         ReturnConsumedCapacity: 'TOTAL',
@@ -687,7 +691,7 @@ export class DynamoDbStorage implements LTIStorage {
     this.logDynamoDbResult(result, 'delete launch config');
 
     // Clear from cache
-    const cacheKey = `${issuer}#${clientId}#${deploymentId}`;
+    const cacheKey = this.tenantKey(`${issuer}#${clientId}#${deploymentId}`);
     LAUNCH_CONFIG_CACHE.delete(cacheKey);
   }
 
@@ -725,7 +729,7 @@ export class DynamoDbStorage implements LTIStorage {
     clientId: string,
   ): Promise<void> {
     // First, query to get all items for this client
-    const pk = `${issuer}#${clientId}`; // this.createClientPK(clientId);
+    const pk = this.launchConfigKey(issuer, clientId);
     const result = await this.ddbClient.send(
       new QueryCommand({
         TableName: this.launchConfigTable,
@@ -782,7 +786,7 @@ export class DynamoDbStorage implements LTIStorage {
   }
 
   private createClientPK(clientId: string): string {
-    return `C#${clientId}`;
+    return this.tenantKey(`C#${clientId}`);
   }
 
   private createDeploymentSK(deploymentId: string): string {
@@ -794,11 +798,19 @@ export class DynamoDbStorage implements LTIStorage {
   }
 
   private createSessionKey(sessionId: string): string {
-    return `S#${sessionId}`;
+    return this.tenantKey(`S#${sessionId}`);
   }
 
   private createNonceKey(nonce: string): string {
-    return `N#${nonce}`;
+    return this.tenantKey(`N#${nonce}`);
+  }
+
+  private launchConfigKey(issuer: string, clientId: string): string {
+    return this.tenantKey(`${issuer}#${clientId}`);
+  }
+
+  private tenantKey(key: string): string {
+    return `T#${this.tenantId}#${key}`;
   }
 
   /**

@@ -19,17 +19,29 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../d
 
 export class D1StorageHarness implements StorageHarness<D1Storage> {
   private readonly seedHelpers;
+  private readonly mf: Miniflare;
+  private readonly database: Awaited<ReturnType<Miniflare['getD1Database']>>;
+  private readonly tenantId: string;
+  private readonly resetTables: () => Promise<void>;
 
-  private constructor(
-    private readonly mf: Miniflare,
-    private readonly database: Awaited<ReturnType<Miniflare['getD1Database']>>,
-    readonly storage: D1Storage,
-    private readonly resetTables: () => Promise<void>,
-  ) {
+  readonly storage: D1Storage;
+
+  private constructor(deps: {
+    readonly mf: Miniflare;
+    readonly database: Awaited<ReturnType<Miniflare['getD1Database']>>;
+    readonly storage: D1Storage;
+    readonly tenantId: string;
+    readonly resetTables: () => Promise<void>;
+  }) {
+    this.mf = deps.mf;
+    this.database = deps.database;
+    this.storage = deps.storage;
+    this.tenantId = deps.tenantId;
+    this.resetTables = deps.resetTables;
     this.seedHelpers = createRelationalSeedHelpers(this.createSeedWriter());
   }
 
-  static async create(): Promise<D1StorageHarness> {
+  static async create(tenantId = 'test-tenant'): Promise<D1StorageHarness> {
     const mf = new Miniflare({
       modules: true,
       script: 'export default { fetch() { return new Response("ok"); } }',
@@ -38,13 +50,14 @@ export class D1StorageHarness implements StorageHarness<D1Storage> {
       log: new Log(LogLevel.WARN),
     });
     const database = await mf.getD1Database('DB');
-    const seedWriter = createD1SeedWriter(database);
-    const harness = new D1StorageHarness(
+    const seedWriter = createD1SeedWriter(database, tenantId);
+    const harness = new D1StorageHarness({
       mf,
       database,
-      new D1Storage({ database }),
-      createRelationalReset(seedWriter),
-    );
+      storage: new D1Storage({ database, tenantId }),
+      tenantId,
+      resetTables: createRelationalReset(seedWriter),
+    });
     try {
       await harness.applyMigrations();
       return harness;
@@ -112,7 +125,7 @@ export class D1StorageHarness implements StorageHarness<D1Storage> {
   }
 
   private createSeedWriter(): RelationalSeedWriter {
-    return createD1SeedWriter(this.database);
+    return createD1SeedWriter(this.database, this.tenantId);
   }
 
   private async applyMigrations(): Promise<void> {
@@ -135,12 +148,13 @@ export class D1StorageHarness implements StorageHarness<D1Storage> {
   }
 }
 
-export function createD1Harness(): Promise<D1StorageHarness> {
-  return D1StorageHarness.create();
+export function createD1Harness(tenantId?: string): Promise<D1StorageHarness> {
+  return D1StorageHarness.create(tenantId);
 }
 
 function createD1SeedWriter(
   database: Awaited<ReturnType<Miniflare['getD1Database']>>,
+  tenantId: string,
 ): RelationalSeedWriter {
   return {
     async resetTable(table: RelationalTable): Promise<void> {
@@ -149,24 +163,26 @@ function createD1SeedWriter(
 
     async insertSession(input): Promise<void> {
       await database
-        .prepare('INSERT INTO lti_sessions (id, payload, expires_at) VALUES (?, ?, ?)')
-        .bind(input.sessionId, input.payloadJson, input.expiresAt)
+        .prepare(
+          'INSERT INTO lti_sessions (id, tenant_id, payload, expires_at) VALUES (?, ?, ?, ?)',
+        )
+        .bind(input.sessionId, tenantId, input.payloadJson, input.expiresAt)
         .run();
     },
 
     async insertNonce(input): Promise<void> {
       await database
-        .prepare('INSERT INTO lti_nonces (nonce, expires_at) VALUES (?, ?)')
-        .bind(input.nonce, input.expiresAt)
+        .prepare('INSERT INTO lti_nonces (nonce, tenant_id, expires_at) VALUES (?, ?, ?)')
+        .bind(input.nonce, tenantId, input.expiresAt)
         .run();
     },
 
     async insertRegistrationSession(input): Promise<void> {
       await database
         .prepare(
-          'INSERT INTO lti_registration_sessions (id, payload, expires_at) VALUES (?, ?, ?)',
+          'INSERT INTO lti_registration_sessions (id, tenant_id, payload, expires_at) VALUES (?, ?, ?, ?)',
         )
-        .bind(input.sessionId, input.payloadJson, input.expiresAt)
+        .bind(input.sessionId, tenantId, input.payloadJson, input.expiresAt)
         .run();
     },
   };

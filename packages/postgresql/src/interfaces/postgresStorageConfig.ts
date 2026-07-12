@@ -2,6 +2,8 @@ import type { LtiLogger } from '@longsightgroup/lti-tool';
 import type postgres from 'postgres';
 
 export interface PostgresStorageConfig {
+  /** Required application tenant boundary for all LTI records. */
+  tenantId: string;
   logger?: LtiLogger;
   /**
    * PostgreSQL connection URL in format: postgresql://user:password@host:port/database

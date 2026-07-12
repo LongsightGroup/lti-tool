@@ -9,7 +9,7 @@ import {
   type LTISession,
   type LTIStorage,
 } from '@longsightgroup/lti-tool';
-import { and, eq, gt, type AnyColumn } from 'drizzle-orm';
+import { and, eq, gt, type AnyColumn, type SQL } from 'drizzle-orm';
 
 import {
   mapDeploymentRow,
@@ -27,6 +27,11 @@ import {
   type RegistrationSessionDataRow,
   type SessionDataRow,
 } from './storageRows.js';
+import {
+  createTenantScope,
+  type TenantScope,
+  type TenantScopedTable,
+} from './tenantScope.js';
 
 type QueryResult<Result> = PromiseLike<readonly Result[]> & {
   readonly where: (condition: unknown) => QueryResult<Result>;
@@ -61,7 +66,7 @@ export type RelationalDatabase = {
   readonly delete: (table: unknown) => DeleteBuilder;
 };
 
-type ClientTable = {
+type ClientTable = TenantScopedTable & {
   readonly id: AnyColumn;
   readonly name: AnyColumn;
   readonly iss: AnyColumn;
@@ -71,7 +76,7 @@ type ClientTable = {
   readonly jwksUrl: AnyColumn;
 };
 
-type DeploymentTable = {
+type DeploymentTable = TenantScopedTable & {
   readonly id: AnyColumn;
   readonly clientId: AnyColumn;
   readonly deploymentId: AnyColumn;
@@ -79,13 +84,13 @@ type DeploymentTable = {
   readonly description: AnyColumn;
 };
 
-type ExpiringDataTable = {
+type ExpiringDataTable = TenantScopedTable & {
   readonly id: AnyColumn;
   readonly data: AnyColumn;
   readonly expiresAt: AnyColumn;
 };
 
-type NoncesTable = {
+type NoncesTable = TenantScopedTable & {
   readonly nonce: AnyColumn;
   readonly expiresAt: AnyColumn;
 };
@@ -129,6 +134,8 @@ export type RelationalStorageConfig = {
   readonly db: RelationalDatabase;
   readonly schema: RelationalSchema;
   readonly dialect: RelationalStorageDialect;
+  /** Binds this storage instance to one tenant for all LTI records. */
+  readonly tenantId: string;
 };
 
 /**
@@ -139,23 +146,28 @@ export class RelationalStorage implements LTIStorage {
   private readonly db: RelationalDatabase;
   private readonly schema: RelationalSchema;
   private readonly dialect: RelationalStorageDialect;
+  private readonly tenant: TenantScope;
 
   constructor(config: RelationalStorageConfig) {
     this.logger = config.logger;
     this.db = config.db;
     this.schema = config.schema;
     this.dialect = config.dialect;
+    this.tenant = createTenantScope(config.tenantId);
   }
 
   async listClients(): Promise<Omit<LTIClient, 'deployments'>[]> {
     this.logger.debug('listing all clients');
 
-    const query = this.db.select<ClientRow>().from(this.schema.clientsTable);
     const orderBy = this.dialect.orderClients?.(this.schema);
+    const base = this.db
+      .select<ClientRow>()
+      .from(this.schema.clientsTable)
+      .where(this.tenant.condition(this.schema.clientsTable));
     const clients =
       orderBy === undefined || orderBy.length === 0
-        ? await query
-        : await query.orderBy(...orderBy);
+        ? await base
+        : await base.orderBy(...orderBy);
 
     this.logger.debug({ count: clients.length }, 'clients found');
     return clients.map(projectClient);
@@ -167,7 +179,9 @@ export class RelationalStorage implements LTIStorage {
     const [client] = await this.db
       .select<ClientRow>()
       .from(this.schema.clientsTable)
-      .where(eq(this.schema.clientsTable.id, clientId))
+      .where(
+        this.scoped(this.schema.clientsTable, eq(this.schema.clientsTable.id, clientId)),
+      )
       .limit(1);
 
     if (!client) {
@@ -215,7 +229,12 @@ export class RelationalStorage implements LTIStorage {
       this.db
         .update(this.schema.clientsTable)
         .set(client)
-        .where(eq(this.schema.clientsTable.id, clientId)),
+        .where(
+          this.scoped(
+            this.schema.clientsTable,
+            eq(this.schema.clientsTable.id, clientId),
+          ),
+        ),
     );
 
     this.logger.debug({ clientId }, 'client updated');
@@ -232,7 +251,12 @@ export class RelationalStorage implements LTIStorage {
     await this.executeMutation(
       this.db
         .delete(this.schema.clientsTable)
-        .where(eq(this.schema.clientsTable.id, clientId)),
+        .where(
+          this.scoped(
+            this.schema.clientsTable,
+            eq(this.schema.clientsTable.id, clientId),
+          ),
+        ),
     );
 
     this.logger.debug({ clientId }, 'client and all deployments deleted');
@@ -244,7 +268,12 @@ export class RelationalStorage implements LTIStorage {
     const rows = await this.db
       .select<DeploymentRow>()
       .from(this.schema.deploymentsTable)
-      .where(eq(this.schema.deploymentsTable.clientId, clientId))
+      .where(
+        this.scoped(
+          this.schema.deploymentsTable,
+          eq(this.schema.deploymentsTable.clientId, clientId),
+        ),
+      )
       .orderBy(
         this.schema.deploymentsTable.deploymentId,
         this.schema.deploymentsTable.id,
@@ -310,9 +339,12 @@ export class RelationalStorage implements LTIStorage {
         .update(this.schema.deploymentsTable)
         .set(toDeploymentUpdateRow(updated))
         .where(
-          and(
-            eq(this.schema.deploymentsTable.clientId, clientId),
-            eq(this.schema.deploymentsTable.id, deploymentId),
+          this.scoped(
+            this.schema.deploymentsTable,
+            and(
+              eq(this.schema.deploymentsTable.clientId, clientId),
+              eq(this.schema.deploymentsTable.id, deploymentId),
+            )!,
           ),
         ),
     );
@@ -333,9 +365,12 @@ export class RelationalStorage implements LTIStorage {
       this.db
         .delete(this.schema.deploymentsTable)
         .where(
-          and(
-            eq(this.schema.deploymentsTable.clientId, clientId),
-            eq(this.schema.deploymentsTable.id, deploymentId),
+          this.scoped(
+            this.schema.deploymentsTable,
+            and(
+              eq(this.schema.deploymentsTable.clientId, clientId),
+              eq(this.schema.deploymentsTable.id, deploymentId),
+            )!,
           ),
         ),
     );
@@ -362,9 +397,12 @@ export class RelationalStorage implements LTIStorage {
       .select<SessionDataRow>()
       .from(this.schema.sessionsTable)
       .where(
-        and(
-          eq(this.schema.sessionsTable.id, sessionId),
-          gt(this.schema.sessionsTable.expiresAt, Date.now()),
+        this.scoped(
+          this.schema.sessionsTable,
+          and(
+            eq(this.schema.sessionsTable.id, sessionId),
+            gt(this.schema.sessionsTable.expiresAt, Date.now()),
+          )!,
         ),
       )
       .limit(1);
@@ -383,11 +421,13 @@ export class RelationalStorage implements LTIStorage {
     const expiresAt = Date.now() + this.dialect.sessionTtlSeconds * 1000;
     const row = toSessionDataRow(session);
     await this.executeMutation(
-      this.db.insert(this.schema.sessionsTable).values({
-        id: row.id,
-        data: row.data,
-        expiresAt,
-      }),
+      this.db.insert(this.schema.sessionsTable).values(
+        this.tenant.insertValues(this.schema.sessionsTable, {
+          id: row.id,
+          data: row.data,
+          expiresAt,
+        }),
+      ),
     );
 
     this.logger.debug({ sessionId: session.id }, 'session added');
@@ -440,9 +480,12 @@ export class RelationalStorage implements LTIStorage {
       .select<RegistrationSessionDataRow>()
       .from(this.schema.registrationSessionsTable)
       .where(
-        and(
-          eq(this.schema.registrationSessionsTable.id, sessionId),
-          gt(this.schema.registrationSessionsTable.expiresAt, Date.now()),
+        this.scoped(
+          this.schema.registrationSessionsTable,
+          and(
+            eq(this.schema.registrationSessionsTable.id, sessionId),
+            gt(this.schema.registrationSessionsTable.expiresAt, Date.now()),
+          )!,
         ),
       )
       .limit(1);
@@ -461,7 +504,12 @@ export class RelationalStorage implements LTIStorage {
     await this.executeMutation(
       this.db
         .delete(this.schema.registrationSessionsTable)
-        .where(eq(this.schema.registrationSessionsTable.id, sessionId)),
+        .where(
+          this.scoped(
+            this.schema.registrationSessionsTable,
+            eq(this.schema.registrationSessionsTable.id, sessionId),
+          ),
+        ),
     );
 
     this.logger.debug({ sessionId }, 'registration session deleted');
@@ -480,7 +528,9 @@ export class RelationalStorage implements LTIStorage {
     const [client] = await this.db
       .select<{ id: string }>({ id: this.schema.clientsTable.id })
       .from(this.schema.clientsTable)
-      .where(eq(this.schema.clientsTable.id, clientId))
+      .where(
+        this.scoped(this.schema.clientsTable, eq(this.schema.clientsTable.id, clientId)),
+      )
       .limit(1);
 
     return client !== undefined;
@@ -494,9 +544,12 @@ export class RelationalStorage implements LTIStorage {
       .select<{ id: string }>({ id: this.schema.clientsTable.id })
       .from(this.schema.clientsTable)
       .where(
-        and(
-          eq(this.schema.clientsTable.iss, iss),
-          eq(this.schema.clientsTable.clientId, clientId),
+        this.scoped(
+          this.schema.clientsTable,
+          and(
+            eq(this.schema.clientsTable.iss, iss),
+            eq(this.schema.clientsTable.clientId, clientId),
+          )!,
         ),
       )
       .limit(1);
@@ -509,25 +562,27 @@ export class RelationalStorage implements LTIStorage {
     clientId: string,
     platformDeploymentId: string,
   ): Promise<LTILaunchConfig | undefined> {
+    const clientsTable = this.schema.clientsTable;
+    const deploymentsTable = this.schema.deploymentsTable;
     const [row] = await this.db
       .select<LaunchConfigRow>({
-        iss: this.schema.clientsTable.iss,
-        clientId: this.schema.clientsTable.clientId,
-        authUrl: this.schema.clientsTable.authUrl,
-        tokenUrl: this.schema.clientsTable.tokenUrl,
-        jwksUrl: this.schema.clientsTable.jwksUrl,
-        deploymentId: this.schema.deploymentsTable.deploymentId,
+        iss: clientsTable.iss,
+        clientId: clientsTable.clientId,
+        authUrl: clientsTable.authUrl,
+        tokenUrl: clientsTable.tokenUrl,
+        jwksUrl: clientsTable.jwksUrl,
+        deploymentId: deploymentsTable.deploymentId,
       })
-      .from(this.schema.clientsTable)
-      .innerJoin(
-        this.schema.deploymentsTable,
-        eq(this.schema.deploymentsTable.clientId, this.schema.clientsTable.id),
-      )
+      .from(clientsTable)
+      .innerJoin(deploymentsTable, eq(deploymentsTable.clientId, clientsTable.id))
       .where(
         and(
-          eq(this.schema.clientsTable.iss, iss),
-          eq(this.schema.clientsTable.clientId, clientId),
-          eq(this.schema.deploymentsTable.deploymentId, platformDeploymentId),
+          this.scoped(clientsTable, eq(clientsTable.iss, iss)),
+          eq(clientsTable.clientId, clientId),
+          this.scoped(
+            deploymentsTable,
+            eq(deploymentsTable.deploymentId, platformDeploymentId),
+          ),
         ),
       )
       .limit(1);
@@ -540,10 +595,12 @@ export class RelationalStorage implements LTIStorage {
     client: Omit<LTIClient, 'id' | 'deployments'>,
   ): Promise<string> {
     await this.executeMutation(
-      this.db.insert(this.schema.clientsTable).values({
-        id: clientId,
-        ...client,
-      }),
+      this.db.insert(this.schema.clientsTable).values(
+        this.tenant.insertValues(this.schema.clientsTable, {
+          id: clientId,
+          ...client,
+        }),
+      ),
     );
     return clientId;
   }
@@ -554,11 +611,13 @@ export class RelationalStorage implements LTIStorage {
     deployment: Omit<LTIDeployment, 'id'>,
   ): Promise<string> {
     await this.executeMutation(
-      this.db.insert(this.schema.deploymentsTable).values({
-        id: deploymentInternalId,
-        clientId,
-        ...toDeploymentInsertRow(deployment),
-      }),
+      this.db.insert(this.schema.deploymentsTable).values(
+        this.tenant.insertValues(this.schema.deploymentsTable, {
+          id: deploymentInternalId,
+          clientId,
+          ...toDeploymentInsertRow(deployment),
+        }),
+      ),
     );
     return deploymentInternalId;
   }
@@ -581,9 +640,12 @@ export class RelationalStorage implements LTIStorage {
       .select<DeploymentRow>()
       .from(this.schema.deploymentsTable)
       .where(
-        and(
-          eq(this.schema.deploymentsTable.clientId, clientId),
-          eq(lookup.column, lookup.value),
+        this.scoped(
+          this.schema.deploymentsTable,
+          and(
+            eq(this.schema.deploymentsTable.clientId, clientId),
+            eq(lookup.column, lookup.value),
+          )!,
         ),
       )
       .limit(1);
@@ -593,6 +655,10 @@ export class RelationalStorage implements LTIStorage {
 
   private executeMutation(query: PromiseLike<unknown>): Promise<unknown> {
     return (this.dialect.executeMutation ?? executePromiseMutation)(query);
+  }
+
+  private scoped(table: TenantScopedTable, condition: SQL): SQL {
+    return this.tenant.withTenant(table, condition);
   }
 }
 
@@ -604,6 +670,7 @@ export async function executePromiseMutation(query: PromiseLike<unknown>): Promi
   await Promise.resolve(query);
 }
 
+export { createTenantScope } from './tenantScope.js';
 export { createD1Dialect } from './d1Dialect.js';
 export { createMySqlDialect, getMySqlAffectedRows } from './mysqlDialect.js';
 export { createPostgresDialect } from './postgresDialect.js';

@@ -17,6 +17,7 @@ export class PostgresStorageHarness implements StorageHarness<PostgresStorage> {
   private constructor(
     private readonly sql: postgres.Sql,
     readonly storage: PostgresStorage,
+    private readonly tenantId: string,
     private readonly resetTables: () => Promise<void>,
   ) {
     this.seedHelpers = createRelationalSeedHelpers(this.createSeedWriter());
@@ -25,12 +26,14 @@ export class PostgresStorageHarness implements StorageHarness<PostgresStorage> {
   static create(
     connectionUrl = process.env.DATABASE_URL ??
       'postgresql://lti_user:lti_password@localhost:5432/lti_test',
+    tenantId = 'test-tenant',
   ): PostgresStorageHarness {
     const sql = postgres(connectionUrl);
-    const seedWriter = createPostgresSeedWriter(sql);
+    const seedWriter = createPostgresSeedWriter(sql, tenantId);
     return new PostgresStorageHarness(
       sql,
-      new PostgresStorage({ connectionUrl, sql }),
+      new PostgresStorage({ connectionUrl, sql, tenantId }),
+      tenantId,
       createRelationalReset(seedWriter),
     );
   }
@@ -59,15 +62,21 @@ export class PostgresStorageHarness implements StorageHarness<PostgresStorage> {
   }
 
   private createSeedWriter(): RelationalSeedWriter {
-    return createPostgresSeedWriter(this.sql);
+    return createPostgresSeedWriter(this.sql, this.tenantId);
   }
 }
 
-export function createPostgresHarness(connectionUrl?: string): PostgresStorageHarness {
-  return PostgresStorageHarness.create(connectionUrl);
+export function createPostgresHarness(
+  connectionUrl?: string,
+  tenantId?: string,
+): PostgresStorageHarness {
+  return PostgresStorageHarness.create(connectionUrl, tenantId);
 }
 
-function createPostgresSeedWriter(sql: postgres.Sql): RelationalSeedWriter {
+function createPostgresSeedWriter(
+  sql: postgres.Sql,
+  tenantId: string,
+): RelationalSeedWriter {
   return {
     async resetTable(table: RelationalTable): Promise<void> {
       await sql.unsafe(`DELETE FROM ${table}`);
@@ -75,22 +84,22 @@ function createPostgresSeedWriter(sql: postgres.Sql): RelationalSeedWriter {
 
     async insertSession(input): Promise<void> {
       await sql`
-        INSERT INTO lti_sessions (id, payload, expires_at)
-        VALUES (${input.sessionId}, ${input.payloadJson}::jsonb, ${input.expiresAt})
+        INSERT INTO lti_sessions (id, tenant_id, payload, expires_at)
+        VALUES (${input.sessionId}, ${tenantId}, ${input.payloadJson}::jsonb, ${input.expiresAt})
       `;
     },
 
     async insertNonce(input): Promise<void> {
       await sql`
-        INSERT INTO lti_nonces (nonce, expires_at)
-        VALUES (${input.nonce}, ${input.expiresAt})
+        INSERT INTO lti_nonces (nonce, tenant_id, expires_at)
+        VALUES (${input.nonce}, ${tenantId}, ${input.expiresAt})
       `;
     },
 
     async insertRegistrationSession(input): Promise<void> {
       await sql`
-        INSERT INTO lti_registration_sessions (id, payload, expires_at)
-        VALUES (${input.sessionId}, ${input.payloadJson}::jsonb, ${input.expiresAt})
+        INSERT INTO lti_registration_sessions (id, tenant_id, payload, expires_at)
+        VALUES (${input.sessionId}, ${tenantId}, ${input.payloadJson}::jsonb, ${input.expiresAt})
       `;
     },
   };

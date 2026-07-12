@@ -17,6 +17,7 @@ export const LTI_TABLES = {
 
 export const LTI_COLUMNS = {
   id: 'id',
+  tenantId: 'tenant_id',
   platformName: 'platform_name',
   deploymentName: 'deployment_name',
   deploymentDescription: 'deployment_description',

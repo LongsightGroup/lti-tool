@@ -8,6 +8,13 @@
       "when": 1782849455129,
       "tag": "0000_ambitious_hardball",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782853055129,
+      "tag": "0001_tenant_scoped_storage",
+      "breakpoints": true
     }
   ]
 }

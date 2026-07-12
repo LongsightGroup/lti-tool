@@ -11,6 +11,10 @@ defineStorageConformanceSuite('D1Storage', {
     expiredRegistrationSessions: true,
   },
   createStorage: () => createD1Harness(),
+  tenantConformance: {
+    createTenantStorage: createD1Harness,
+    tenantScopedCleanup: true,
+  },
 });
 
 describe('D1Storage cleanup', () => {

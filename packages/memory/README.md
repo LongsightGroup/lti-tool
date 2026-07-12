@@ -64,6 +64,10 @@ const storage = new MemoryStorage({
 });
 ```
 
+## Tenant Boundary
+
+Each `MemoryStorage` instance owns one tenant namespace. Create a separate storage instance for each tenant; data is never shared between instances.
+
 ## Limitations
 
 - **No Persistence** - Data lost on restart

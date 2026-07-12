@@ -1,6 +1,6 @@
 // oxlint-disable max-lines-per-function
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { marshall } from '@aws-sdk/util-dynamodb';
+import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   createNoopLogger,
   type LTIClient,
@@ -77,6 +77,7 @@ describe('DynamoDbStorage', () => {
       controlPlaneTable: 'controlPlane',
       dataPlaneTable: 'dataPlane',
       launchConfigTable: 'launchConfigs',
+      tenantId: 'test-tenant',
       logger: createNoopLogger(),
     });
   });
@@ -87,9 +88,9 @@ describe('DynamoDbStorage', () => {
         ...dynamoOk(),
         Items: [
           marshall({
-            pk: 'C#client-uuid-123',
+            pk: 'T#test-tenant#C#client-uuid-123',
             sk: 'D#deployment',
-            gsi2pk: 'C#client-uuid-123',
+            gsi2pk: 'T#test-tenant#C#client-uuid-123',
             gsi2sk: 'PD#deployment1',
             type: 'Deployment',
             id: 'deployment',
@@ -112,20 +113,36 @@ describe('DynamoDbStorage', () => {
   });
 
   describe('getClientById', () => {
+    it('scopes control-plane queries to the configured tenant', async () => {
+      mockSend.mockResolvedValue({
+        $metadata: { httpStatusCode: 200 },
+        Items: [],
+      });
+
+      await storage.getClientById('client-uuid-123');
+
+      const input = commandInput(mockSend.mock.calls[0]?.[0]) as {
+        readonly ExpressionAttributeValues?: Record<string, { S: string }>;
+      };
+      expect(unmarshall(input.ExpressionAttributeValues ?? {})[':pk']).toBe(
+        'T#test-tenant#C#client-uuid-123',
+      );
+    });
+
     it('fetches from DynamoDB when not cached', async () => {
       mockSend.mockResolvedValue({
         $metadata: { httpStatusCode: 200 },
         Items: [
           // Client record
           marshall({
-            pk: 'C#client-uuid-123',
+            pk: 'T#test-tenant#C#client-uuid-123',
             sk: '#',
             type: 'Client',
             ...mockClient,
           }),
           // Deployment record
           marshall({
-            pk: 'C#client-uuid-123',
+            pk: 'T#test-tenant#C#client-uuid-123',
             sk: 'D#deployment',
             type: 'Deployment',
             id: 'deployment',
@@ -148,13 +165,13 @@ describe('DynamoDbStorage', () => {
         $metadata: { httpStatusCode: 200 },
         Items: [
           marshall({
-            pk: 'C#client-uuid-123',
+            pk: 'T#test-tenant#C#client-uuid-123',
             sk: '#',
             type: 'Client',
             ...mockClient,
           }),
           marshall({
-            pk: 'C#client-uuid-123',
+            pk: 'T#test-tenant#C#client-uuid-123',
             sk: 'D#deployment',
             type: 'Deployment',
             id: 'deployment',
@@ -240,7 +257,7 @@ describe('DynamoDbStorage', () => {
     it('returns cached launch config', async () => {
       // Pre-populate cache
       LAUNCH_CONFIG_CACHE.set(
-        'https://platform.example.com#client123#deployment1',
+        'T#test-tenant#https://platform.example.com#client123#deployment1',
         mockLaunchConfig,
       );
 
@@ -270,7 +287,7 @@ describe('DynamoDbStorage', () => {
       expect(mockSend).toHaveBeenCalledOnce();
 
       // Verify it was cached
-      const cacheKey = 'https://platform.example.com#client123#deployment1';
+      const cacheKey = 'T#test-tenant#https://platform.example.com#client123#deployment1';
       expect(LAUNCH_CONFIG_CACHE.get(cacheKey)).toEqual(mockLaunchConfig);
     });
   });

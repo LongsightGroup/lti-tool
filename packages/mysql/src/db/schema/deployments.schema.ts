@@ -16,6 +16,7 @@ export const deploymentsTable = mysqlTable(
   LTI_TABLES.deployments,
   {
     id: varchar(LTI_COLUMNS.id, { length: LTI_ID_LENGTH }).primaryKey(),
+    tenantId: varchar(LTI_COLUMNS.tenantId, { length: LTI_ID_LENGTH }).notNull(),
     deploymentId: varchar(LTI_COLUMNS.deploymentId, {
       length: LTI_DEPLOYMENT_ID_LENGTH,
     }).notNull(),
@@ -26,7 +27,7 @@ export const deploymentsTable = mysqlTable(
       .references(() => clientsTable.id, { onDelete: 'cascade' }),
   },
   (table) => [
-    index(LTI_INDEXES.deploymentsDeploymentId).on(table.deploymentId),
+    index(LTI_INDEXES.deploymentsDeploymentId).on(table.tenantId, table.deploymentId),
     unique(LTI_UNIQUES.deploymentsClientDeployment).on(
       table.clientId,
       table.deploymentId,

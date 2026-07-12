@@ -2,6 +2,7 @@ import type { LtiLogger } from '@longsightgroup/lti-tool';
 import type mysql from 'mysql2/promise';
 
 export interface MySqlStorageConfig {
+  tenantId: string;
   logger?: LtiLogger;
   /**
    * MySQL connection URL in format: mysql://user:password@host:port/database

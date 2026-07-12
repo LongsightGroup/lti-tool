@@ -11,6 +11,7 @@ export const clientsTable = sqliteTable(
   LTI_TABLES.clients,
   {
     id: text(LTI_COLUMNS.id).primaryKey(),
+    tenantId: text(LTI_COLUMNS.tenantId).notNull(),
     name: text(LTI_COLUMNS.platformName).notNull(),
     iss: text(LTI_COLUMNS.iss).notNull(),
     clientId: text(LTI_COLUMNS.clientId).notNull(),
@@ -19,7 +20,11 @@ export const clientsTable = sqliteTable(
     jwksUrl: text(LTI_COLUMNS.jwksUrl).notNull(),
   },
   (table) => [
-    index(LTI_INDEXES.clientsIssuerClient).on(table.clientId, table.iss),
-    uniqueIndex(LTI_UNIQUES.clientsIssClientId).on(table.iss, table.clientId),
+    index(LTI_INDEXES.clientsIssuerClient).on(table.tenantId, table.clientId, table.iss),
+    uniqueIndex(LTI_UNIQUES.clientsIssClientId).on(
+      table.tenantId,
+      table.iss,
+      table.clientId,
+    ),
   ],
 );

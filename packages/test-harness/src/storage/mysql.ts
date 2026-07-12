@@ -17,6 +17,7 @@ export class MySqlStorageHarness implements StorageHarness<MySqlStorage> {
   private constructor(
     private readonly pool: mysql.Pool,
     readonly storage: MySqlStorage,
+    private readonly tenantId: string,
     private readonly resetTables: () => Promise<void>,
   ) {
     this.seedHelpers = createRelationalSeedHelpers(this.createSeedWriter());
@@ -25,12 +26,14 @@ export class MySqlStorageHarness implements StorageHarness<MySqlStorage> {
   static create(
     connectionUrl = process.env.DATABASE_URL ??
       'mysql://lti_user:lti_password@localhost:3306/lti_test',
+    tenantId = 'test-tenant',
   ): MySqlStorageHarness {
     const pool = mysql.createPool({ uri: connectionUrl });
-    const seedWriter = createMySqlSeedWriter(pool);
+    const seedWriter = createMySqlSeedWriter(pool, tenantId);
     return new MySqlStorageHarness(
       pool,
-      new MySqlStorage({ connectionUrl, pool }),
+      new MySqlStorage({ connectionUrl, pool, tenantId }),
+      tenantId,
       createRelationalReset(seedWriter),
     );
   }
@@ -59,15 +62,18 @@ export class MySqlStorageHarness implements StorageHarness<MySqlStorage> {
   }
 
   private createSeedWriter(): RelationalSeedWriter {
-    return createMySqlSeedWriter(this.pool);
+    return createMySqlSeedWriter(this.pool, this.tenantId);
   }
 }
 
-export function createMySqlHarness(connectionUrl?: string): MySqlStorageHarness {
-  return MySqlStorageHarness.create(connectionUrl);
+export function createMySqlHarness(
+  connectionUrl?: string,
+  tenantId?: string,
+): MySqlStorageHarness {
+  return MySqlStorageHarness.create(connectionUrl, tenantId);
 }
 
-function createMySqlSeedWriter(pool: mysql.Pool): RelationalSeedWriter {
+function createMySqlSeedWriter(pool: mysql.Pool, tenantId: string): RelationalSeedWriter {
   return {
     async resetTable(table: RelationalTable): Promise<void> {
       await pool.execute(`DELETE FROM ${table}`);
@@ -75,22 +81,22 @@ function createMySqlSeedWriter(pool: mysql.Pool): RelationalSeedWriter {
 
     async insertSession(input): Promise<void> {
       await pool.execute(
-        'INSERT INTO lti_sessions (id, payload, expires_at) VALUES (?, ?, ?)',
-        [input.sessionId, input.payloadJson, input.expiresAt],
+        'INSERT INTO lti_sessions (id, tenant_id, payload, expires_at) VALUES (?, ?, ?, ?)',
+        [input.sessionId, tenantId, input.payloadJson, input.expiresAt],
       );
     },
 
     async insertNonce(input): Promise<void> {
-      await pool.execute('INSERT INTO lti_nonces (nonce, expires_at) VALUES (?, ?)', [
-        input.nonce,
-        input.expiresAt,
-      ]);
+      await pool.execute(
+        'INSERT INTO lti_nonces (nonce, tenant_id, expires_at) VALUES (?, ?, ?)',
+        [input.nonce, tenantId, input.expiresAt],
+      );
     },
 
     async insertRegistrationSession(input): Promise<void> {
       await pool.execute(
-        'INSERT INTO lti_registration_sessions (id, payload, expires_at) VALUES (?, ?, ?)',
-        [input.sessionId, input.payloadJson, input.expiresAt],
+        'INSERT INTO lti_registration_sessions (id, tenant_id, payload, expires_at) VALUES (?, ?, ?, ?)',
+        [input.sessionId, tenantId, input.payloadJson, input.expiresAt],
       );
     },
   };

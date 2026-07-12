@@ -23,6 +23,7 @@ import { D1Storage } from '@longsightgroup/lti-tool/storage/d1';
 
 const storage = new D1Storage({
   database: env.DB,
+  tenantId: env.LTI_TENANT_ID,
 });
 
 const ltiTool = new LTITool({

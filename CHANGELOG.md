@@ -1,9 +1,26 @@
 # @longsightgroup/lti-tool
 
+## 0.1.5
+
+### Patch Changes
+
+- Require `tenantId` on shared storage adapters and scope clients, deployments, sessions, nonces, and registration sessions to one tenant per storage instance.
+- Add composite `(tenant_id, nonce)` and `(tenant_id, id)` primary keys plus tenant-aware indexes for relational storage schemas.
+- Prefix DynamoDB partition keys with `T#{tenantId}#` so control-plane and data-plane records stay tenant-isolated.
+- Add storage conformance coverage for tenant isolation and tenant-scoped cleanup.
+
 ## 0.1.4
 
 ### Patch Changes
 
+- Document Deep Linking `acceptLineItem` support and preserve `presentation.documentTarget` on resource-link content items.
+- Return typed dynamic-registration initiation data with `html` and `sessionToken` so consumers do not need to parse generated forms.
+- Add source-neutral Hono handler/context types for custom route callbacks.
+- Allow AGS score submission to target an explicit line item URL.
+- Expand RSA private JWK loading to derive missing `kid` values and return matching public JWK/JWKS material.
+- Generate Canvas static Developer Key JSON from the dynamic registration config.
+- Add `requireLtiSession` for typed session lookup failures.
+- Add Canvas Cloud platform binding helpers for production, beta, and test endpoint derivation.
 - Fix LTI Deep Linking settings parsing to follow the 1EdTech spec: include `accept_lineitem`, `title`, and `text`; require `accept_presentation_document_targets`; and reject unknown Deep Linking settings keys instead of silently dropping them.
 - Add `acceptLineItem`, `title`, and `text` to the exported `LtiDeepLinkingSettings` session/capability contract.
 - Add a normalized `LtiDeepLinkingSettingsSchema` export and use it for session persistence parsing.

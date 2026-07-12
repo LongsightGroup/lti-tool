@@ -14,6 +14,10 @@ defineStorageConformanceSuite('MySqlStorage', {
     expiredRegistrationSessions: true,
   },
   createStorage: () => createMySqlHarness(),
+  tenantConformance: {
+    createTenantStorage: (tenantId) => createMySqlHarness(undefined, tenantId),
+    tenantScopedCleanup: true,
+  },
 });
 
 describe('MySqlStorage cleanup', () => {

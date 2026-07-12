@@ -22,6 +22,7 @@ const storage = new DynamoDbStorage({
   controlPlaneTable: 'lti-tool-control',
   dataPlaneTable: 'lti-tool-data',
   launchConfigTable: 'lti-tool-launch-config',
+  tenantId: process.env.LTI_TENANT_ID!,
   logger, // optional structural logger
 });
 
@@ -50,8 +51,11 @@ const storage = new DynamoDbStorage({
   controlPlaneTable: 'lti-tool-control', // LMS configurations
   dataPlaneTable: 'lti-tool-data', // nonce and session storage, with ttl
   launchConfigTable: 'lti-tool-launch-config', // LMS client and deployment lookup for optimized critical launch path performance
+  tenantId: process.env.LTI_TENANT_ID!,
 });
 ```
+
+`tenantId` is required. DynamoDB prefixes every partition key with `T#<tenantId>#`, keeping all control-plane and data-plane records in that storage instance's tenant namespace.
 
 ## Table Schema
 
@@ -63,31 +67,31 @@ Stores LMS client and deployment configurations.
 
 | Attribute | Type   | Description                    |
 | --------- | ------ | ------------------------------ |
-| `pk`      | String | `C#<clientId>`                 |
+| `pk`      | String | `T#<tenantId>#C#<clientId>`    |
 | `sk`      | String | `#` (client) or `D#<deployId>` |
-| `gsi1pk`  | String | `Type#Client` (for listing)    |
+| `gsi1pk`  | String | `T#<tenantId>#Type#Client`     |
 | `gsi1sk`  | String | `#<clientId>`                  |
-| `gsi2pk`  | String | `C#<clientId>` (deployments)   |
+| `gsi2pk`  | String | `T#<tenantId>#C#<clientId>`    |
 | `gsi2sk`  | String | `PD#<platformDeploymentId>`    |
 
 ### Data Plane Table (`lti-tool-data`)
 
 Stores sessions and nonces with automatic TTL cleanup.
 
-| Attribute | Type   | Description                    |
-| --------- | ------ | ------------------------------ |
-| `pk`      | String | `S#<sessionId>` or `N#<nonce>` |
-| `sk`      | String | Same as pk                     |
-| `ttl`     | Number | TTL for auto cleanup           |
+| Attribute | Type   | Description                                              |
+| --------- | ------ | -------------------------------------------------------- |
+| `pk`      | String | `T#<tenantId>#S#<sessionId>` or `T#<tenantId>#N#<nonce>` |
+| `sk`      | String | Same as pk                                               |
+| `ttl`     | Number | TTL for auto cleanup                                     |
 
 ### Launch Config Table (`lti-tool-launch-config`)
 
 Optimized for fast LTI launch lookups.
 
-| Attribute | Type   | Description        |
-| --------- | ------ | ------------------ |
-| `pk`      | String | `<iss>#<clientId>` |
-| `sk`      | String | `<deploymentId>`   |
+| Attribute | Type   | Description                     |
+| --------- | ------ | ------------------------------- |
+| `pk`      | String | `T#<tenantId>#<iss>#<clientId>` |
+| `sk`      | String | `<deploymentId>`                |
 
 ## IAM Permissions
 

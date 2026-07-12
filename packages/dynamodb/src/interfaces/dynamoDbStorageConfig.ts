@@ -1,6 +1,7 @@
 import type { LtiLogger } from '@longsightgroup/lti-tool';
 
 export interface DynamoDbStorageConfig {
+  tenantId: string;
   logger?: LtiLogger;
   controlPlaneTable: string;
   dataPlaneTable: string;

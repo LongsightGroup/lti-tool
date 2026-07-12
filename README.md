@@ -415,6 +415,8 @@ Service availability depends on what the platform enabled for the deployment. He
 
 Each SQL adapter ships with a `drizzle.config.ts` and generated migration files. The Drizzle schema files are the source of truth; use `npm run db:generate:*` after schema changes and `npm run db:check:migrations` before publishing migration changes. Run Drizzle commands from the monorepo root so the config paths resolve correctly. See the README in `packages/postgresql`, `packages/mysql`, or `packages/d1` for setup commands.
 
+Each storage instance owns one tenant namespace. Shared storage adapters require `tenantId` when constructed; create one storage instance per tenant. `MemoryStorage` follows the same boundary through instance lifetime and does not take a tenant configuration value.
+
 Storage `getLaunchConfig` methods return exact deployment matches only. The core launch flow owns default-deployment resolution.
 
 ## Test with Moodle sandbox

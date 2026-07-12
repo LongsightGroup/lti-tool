@@ -8,6 +8,13 @@
       "when": 1782849455761,
       "tag": "0000_panoramic_silverclaw",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1782853055761,
+      "tag": "0001_tenant_scoped_storage",
+      "breakpoints": true
     }
   ]
 }
