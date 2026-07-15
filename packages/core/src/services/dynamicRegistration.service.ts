@@ -64,6 +64,9 @@ const storeDynamicRegistrationResult = (input: {
     }),
   );
 
+const OPENID_CONFIGURATION_REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
+const MAX_OPENID_CONFIGURATION_REDIRECTS = 5;
+
 /**
  * Service for handling LTI 1.3 dynamic registration workflows.
  *
@@ -137,21 +140,17 @@ export class DynamicRegistrationService {
     registrationRequest: RegistrationRequest,
   ): Promise<OpenIDConfiguration> {
     const { openid_configuration, registration_token } = registrationRequest;
-    const response = await ltiServiceFetch(openid_configuration, {
-      method: 'GET',
-      headers: {
-        // only include registration token if it was provided
-        ...(registration_token && { Authorization: `Bearer ${registration_token}` }),
-        Accept: 'application/json',
-      },
-    });
+    const response = await this.fetchOpenIdConfiguration(
+      openid_configuration,
+      registration_token,
+    );
 
     await this.validateDynamicRegistrationResponse(
       response,
       'validateRegistrationRequest',
     );
 
-    const data = await response.json();
+    const data = await this.readOpenIdConfigurationResponse(response);
     const openIdConfiguration = openIDConfigurationSchema.parse(data);
     this.logger.debug({ openIdConfiguration });
 
@@ -167,6 +166,96 @@ export class DynamicRegistrationService {
 
     // good to continue!
     return openIdConfiguration;
+  }
+
+  private async fetchOpenIdConfiguration(
+    openidConfiguration: string,
+    registrationToken: string | undefined,
+  ): Promise<Response> {
+    let url = this.withRegistrationToken(openidConfiguration, registrationToken);
+
+    for (let redirectCount = 0; ; redirectCount += 1) {
+      const response = await ltiServiceFetch(url, {
+        method: 'GET',
+        redirect: 'manual',
+        headers: {
+          ...(registrationToken === undefined
+            ? {}
+            : { Authorization: `Bearer ${registrationToken}` }),
+          Accept: 'application/json',
+        },
+      });
+
+      if (!OPENID_CONFIGURATION_REDIRECT_STATUS_CODES.has(response.status)) {
+        return response;
+      }
+
+      if (redirectCount === MAX_OPENID_CONFIGURATION_REDIRECTS) {
+        throw new LtiServiceError({
+          code: 'platform_response_invalid',
+          serviceKind: 'dynamic_registration',
+          operation: 'fetchPlatformConfiguration',
+          message: 'Dynamic registration OpenID configuration redirected too many times',
+          status: response.status,
+          statusText: response.statusText,
+        });
+      }
+
+      const location = response.headers.get('location');
+      if (location === null) {
+        throw new LtiServiceError({
+          code: 'platform_response_invalid',
+          serviceKind: 'dynamic_registration',
+          operation: 'fetchPlatformConfiguration',
+          message:
+            'Dynamic registration OpenID configuration redirect is missing a location',
+          status: response.status,
+          statusText: response.statusText,
+        });
+      }
+
+      url = this.withRegistrationToken(new URL(location, url), registrationToken);
+    }
+  }
+
+  private withRegistrationToken(
+    input: string | URL,
+    registrationToken: string | undefined,
+  ): URL {
+    const url = new URL(input);
+    if (registrationToken !== undefined) {
+      url.searchParams.set('registration_token', registrationToken);
+    }
+    return url;
+  }
+
+  private async readOpenIdConfigurationResponse(response: Response): Promise<unknown> {
+    const contentType = response.headers.get('content-type');
+    if (contentType === null || !contentType.toLowerCase().includes('json')) {
+      throw new LtiServiceError({
+        code: 'platform_response_invalid',
+        serviceKind: 'dynamic_registration',
+        operation: 'fetchPlatformConfiguration',
+        message: 'Dynamic registration OpenID configuration response must be JSON',
+        status: response.status,
+        statusText: response.statusText,
+        responseBodySummary: `content-type: ${contentType ?? 'missing'}`,
+      });
+    }
+
+    try {
+      return await response.json();
+    } catch (error) {
+      throw new LtiServiceError({
+        code: 'platform_response_invalid',
+        serviceKind: 'dynamic_registration',
+        operation: 'fetchPlatformConfiguration',
+        message: 'Dynamic registration OpenID configuration response is not valid JSON',
+        cause: error,
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
   }
 
   /**
@@ -286,14 +375,32 @@ export class DynamicRegistrationService {
     operation: string,
   ): Promise<void> {
     if (!response.ok) {
-      const error = await response.json();
+      const contentType = response.headers.get('content-type');
+      const responseBodySummary =
+        contentType === null || !contentType.toLowerCase().includes('json')
+          ? `content-type: ${contentType ?? 'missing'}`
+          : await this.readJsonResponseSummary(response);
       this.logger.error(
-        { error, status: response.status, statusText: response.statusText },
+        { responseBodySummary, status: response.status, statusText: response.statusText },
         `Dynamic Registration ${operation} failed`,
       );
-      throw new Error(
-        `Dynamic Registration ${operation} failed: ${response.statusText} ${error}`,
-      );
+      throw new LtiServiceError({
+        code: 'platform_request_failed',
+        serviceKind: 'dynamic_registration',
+        operation: 'fetchPlatformConfiguration',
+        message: `Dynamic Registration ${operation} failed`,
+        status: response.status,
+        statusText: response.statusText,
+        responseBodySummary,
+      });
+    }
+  }
+
+  private async readJsonResponseSummary(response: Response): Promise<string> {
+    try {
+      return JSON.stringify(await response.clone().json());
+    } catch {
+      return 'invalid JSON response body';
     }
   }
 

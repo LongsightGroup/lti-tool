@@ -281,6 +281,67 @@ describe('DynamicRegistrationService', () => {
     );
   });
 
+  it('preserves the registration token when OpenID configuration redirects', async () => {
+    const service = createService({ storage: createStorageMock() });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'https://platform.example/openid-configuration' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          createOpenIdConfiguration({
+            productFamilyCode: 'canvas',
+          }),
+        ),
+      );
+    global.fetch = fetchMock as typeof fetch;
+
+    await service.fetchPlatformConfiguration({
+      openid_configuration: 'https://platform.example/openid-configuration/start',
+      registration_token: 'registration-token',
+    });
+
+    const redirectedRequest = fetchMock.mock.calls[1];
+    if (!redirectedRequest) {
+      throw new Error('expected OpenID configuration redirect request');
+    }
+    const redirectedUrl = new URL(String(redirectedRequest[0]));
+    const headers = new Headers(redirectedRequest[1]?.headers);
+
+    expect(redirectedUrl.searchParams.get('registration_token')).toBe(
+      'registration-token',
+    );
+    expect(headers.get('Authorization')).toBe('Bearer registration-token');
+    expect(headers.get('Accept')).toBe('application/json');
+    expect(redirectedRequest[1]?.redirect).toBe('manual');
+  });
+
+  it('reports a non-JSON OpenID configuration response without parsing its HTML', async () => {
+    const service = createService({ storage: createStorageMock() });
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response('<!DOCTYPE html><title>Sign in</title>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      ),
+    ) as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'https://platform.example/openid-configuration',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_response_invalid',
+      message: 'Dynamic registration OpenID configuration response must be JSON',
+      responseBodySummary: 'content-type: text/html; charset=utf-8',
+    });
+  });
+
   it('stores app state during registration initiation', async () => {
     const storage = createStorageMock();
     const service = createService({ storage });
