@@ -23,12 +23,12 @@ import {
 import type { RegistrationRequest } from '../schemas/lti13/dynamicRegistration/registrationRequest.schema.js';
 import type { RegistrationResponse } from '../schemas/lti13/dynamicRegistration/registrationResponse.schema.js';
 import { escapeHtml } from '../utils/htmlEscaping.js';
-import { ltiServiceFetch } from '../utils/ltiServiceFetch.js';
 
 import {
   postRegistrationToPlatform,
   renderDynamicRegistrationForm,
 } from './dynamicRegistrationHandlers/platform.js';
+import { fetchOpenIdConfiguration } from './dynamicRegistrationOpenIdFetch.js';
 import { buildToolRegistrationPayload } from './dynamicRegistrationPayload.js';
 
 export interface LtiDynamicRegistrationCompletionResult {
@@ -131,41 +131,49 @@ export class DynamicRegistrationService {
    *
    * @param registrationRequest - Registration request containing openid_configuration URL and optional registration_token
    * @returns Validated OpenID configuration with platform endpoints and supported features
-   * @throws {Error} When the configuration fetch fails, validation fails, or hostname mismatch detected
+   * @throws {LtiServiceError} When the configuration fetch fails, validation fails, or hostname mismatch detected
    */
   async fetchPlatformConfiguration(
     registrationRequest: RegistrationRequest,
   ): Promise<OpenIDConfiguration> {
     const { openid_configuration, registration_token } = registrationRequest;
-    const response = await ltiServiceFetch(openid_configuration, {
-      method: 'GET',
-      headers: {
-        // only include registration token if it was provided
-        ...(registration_token && { Authorization: `Bearer ${registration_token}` }),
-        Accept: 'application/json',
-      },
+    const { data, finalHostname } = await fetchOpenIdConfiguration({
+      openidConfiguration: openid_configuration,
+      registrationToken: registration_token,
     });
 
-    await this.validateDynamicRegistrationResponse(
-      response,
-      'validateRegistrationRequest',
-    );
-
-    const data = await response.json();
-    const openIdConfiguration = openIDConfigurationSchema.parse(data);
+    let openIdConfiguration: OpenIDConfiguration;
+    try {
+      openIdConfiguration = openIDConfigurationSchema.parse(data);
+    } catch (error) {
+      throw new LtiServiceError({
+        code: 'platform_response_invalid',
+        serviceKind: 'dynamic_registration',
+        operation: 'fetchPlatformConfiguration',
+        message: 'Dynamic registration OpenID configuration response failed validation',
+        cause: error,
+      });
+    }
     this.logger.debug({ openIdConfiguration });
 
-    // validate that the endpoint and issuer have the same hostname
-    const oidcEndpoint = new URL(openid_configuration);
-    const { issuer } = openIdConfiguration;
-    const issuerEndpoint = new URL(issuer);
-    if (oidcEndpoint.hostname !== issuerEndpoint.hostname) {
-      const errorMessage = `OIDC endpoint and issuer in OIDC payload do not match, cannot continue. OIDC endpoint: ${oidcEndpoint} issuer endpoint: ${issuerEndpoint}`;
-      this.logger.error(errorMessage);
-      throw new Error(errorMessage);
+    const issuerEndpoint = new URL(openIdConfiguration.issuer);
+    if (finalHostname !== issuerEndpoint.hostname) {
+      const message = 'OpenID configuration issuer does not match the discovery endpoint';
+      this.logger.error(
+        {
+          endpointHostname: finalHostname,
+          issuerHostname: issuerEndpoint.hostname,
+        },
+        message,
+      );
+      throw new LtiServiceError({
+        code: 'platform_response_invalid',
+        serviceKind: 'dynamic_registration',
+        operation: 'fetchPlatformConfiguration',
+        message,
+      });
     }
 
-    // good to continue!
     return openIdConfiguration;
   }
 
@@ -279,22 +287,6 @@ export class DynamicRegistrationService {
       await this.storage.deleteRegistrationSession(sessionToken);
     }
     return session;
-  }
-
-  private async validateDynamicRegistrationResponse(
-    response: Response,
-    operation: string,
-  ): Promise<void> {
-    if (!response.ok) {
-      const error = await response.json();
-      this.logger.error(
-        { error, status: response.status, statusText: response.statusText },
-        `Dynamic Registration ${operation} failed`,
-      );
-      throw new Error(
-        `Dynamic Registration ${operation} failed: ${response.statusText} ${error}`,
-      );
-    }
   }
 
   private getRegistrationSuccessHtml(registrationResponse: RegistrationResponse): string {

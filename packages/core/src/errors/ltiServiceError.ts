@@ -213,6 +213,16 @@ export async function summarizeLtiServiceResponseBody(
   }
 }
 
+/**
+ * Formats safe metadata for a failed LTI platform response.
+ * Deliberately avoids reading the response body because discovery failures can contain
+ * HTML login pages, credentials, or other untrusted platform data.
+ */
+export function formatLtiServiceErrorResponseMetadata(response: Response): string {
+  const contentType = response.headers.get('content-type');
+  return `content-type: ${contentType ?? 'missing'}`;
+}
+
 const ltiServiceFailure = (
   error: unknown,
   serviceKind: LtiPlatformServiceKind,

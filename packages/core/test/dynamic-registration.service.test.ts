@@ -126,11 +126,12 @@ function createToolConfig(
 function createService(input: {
   storage: LTIStorage;
   config?: DynamicRegistrationConfig;
+  logger?: LtiLogger;
 }): DynamicRegistrationService {
   return new DynamicRegistrationService(
     input.storage,
     input.config ?? createToolConfig(),
-    createLoggerMock(),
+    input.logger ?? createLoggerMock(),
   );
 }
 
@@ -279,6 +280,294 @@ describe('DynamicRegistrationService', () => {
         registrationToken: 'reg-token-123',
       }),
     );
+  });
+
+  it('preserves the registration token when OpenID configuration redirects', async () => {
+    const service = createService({ storage: createStorageMock() });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'https://platform.example/openid-configuration' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          createOpenIdConfiguration({
+            productFamilyCode: 'canvas',
+          }),
+        ),
+      );
+    global.fetch = fetchMock as typeof fetch;
+
+    await service.fetchPlatformConfiguration({
+      openid_configuration: 'https://platform.example/openid-configuration/start',
+      registration_token: 'registration-token',
+    });
+
+    const initialRequest = fetchMock.mock.calls[0];
+    if (!initialRequest) {
+      throw new Error('expected initial OpenID configuration request');
+    }
+    const initialUrl = new URL(String(initialRequest[0]));
+    const initialHeaders = new Headers(initialRequest[1]?.headers);
+
+    expect(initialUrl.searchParams.has('registration_token')).toBe(false);
+    expect(initialHeaders.get('Authorization')).toBe('Bearer registration-token');
+    expect(initialRequest[1]?.redirect).toBe('manual');
+
+    const redirectedRequest = fetchMock.mock.calls[1];
+    if (!redirectedRequest) {
+      throw new Error('expected OpenID configuration redirect request');
+    }
+    const redirectedUrl = new URL(String(redirectedRequest[0]));
+    const headers = new Headers(redirectedRequest[1]?.headers);
+
+    expect(redirectedUrl.searchParams.get('registration_token')).toBe(
+      'registration-token',
+    );
+    expect(headers.get('Authorization')).toBe('Bearer registration-token');
+    expect(headers.get('Accept')).toBe('application/json');
+    expect(redirectedRequest[1]?.redirect).toBe('manual');
+  });
+
+  it('rejects cross-origin redirects before forwarding the registration token', async () => {
+    const service = createService({ storage: createStorageMock() });
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'https://attacker.example/openid-configuration' },
+        }),
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'https://platform.example/openid-configuration/start',
+        registration_token: 'registration-token',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_response_invalid',
+      operation: 'fetchPlatformConfiguration',
+      message:
+        'Dynamic registration OpenID configuration redirect must stay on the same origin',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects redirects that downgrade OpenID configuration discovery to HTTP', async () => {
+    const service = createService({ storage: createStorageMock() });
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'http://platform.example/openid-configuration' },
+        }),
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'https://platform.example/openid-configuration/start',
+        registration_token: 'registration-token',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_response_invalid',
+      operation: 'fetchPlatformConfiguration',
+      message: 'Dynamic registration OpenID configuration redirect must use HTTPS',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an insecure initial OpenID configuration URL before sending a token', async () => {
+    const service = createService({ storage: createStorageMock() });
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'http://platform.example/openid-configuration',
+        registration_token: 'registration-token',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_response_invalid',
+      operation: 'fetchPlatformConfiguration',
+      message: 'Dynamic registration OpenID configuration URL must use HTTPS',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects OpenID configuration redirects without a location header', async () => {
+    const service = createService({ storage: createStorageMock() });
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(null, {
+          status: 302,
+        }),
+      ),
+    ) as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'https://platform.example/openid-configuration/start',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_response_invalid',
+      operation: 'fetchPlatformConfiguration',
+      message: 'Dynamic registration OpenID configuration redirect is missing a location',
+    });
+  });
+
+  it('rejects excessive OpenID configuration redirects', async () => {
+    const service = createService({ storage: createStorageMock() });
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(null, {
+          status: 302,
+          headers: { Location: '/openid-configuration/next' },
+        }),
+      ),
+    ) as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'https://platform.example/openid-configuration/start',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_response_invalid',
+      operation: 'fetchPlatformConfiguration',
+      message: 'Dynamic registration OpenID configuration redirected too many times',
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(6);
+  });
+
+  it('reports invalid JSON OpenID configuration responses', async () => {
+    const service = createService({ storage: createStorageMock() });
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response('{not-json', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    ) as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'https://platform.example/openid-configuration',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_response_invalid',
+      operation: 'fetchPlatformConfiguration',
+      message: 'Dynamic registration OpenID configuration response is not valid JSON',
+    });
+  });
+
+  it('does not include arbitrary platform JSON in request failure details', async () => {
+    const service = createService({ storage: createStorageMock() });
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        Response.json(
+          { error: 'denied', registration_token: 'platform-secret' },
+          { status: 403 },
+        ),
+      ),
+    ) as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'https://platform.example/openid-configuration',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_request_failed',
+      operation: 'fetchPlatformConfiguration',
+      message: 'Dynamic registration OpenID configuration request failed',
+      responseBodySummary: 'content-type: application/json',
+    });
+  });
+
+  it('validates hostname against the final OpenID configuration URL after redirects', async () => {
+    const errorLogger = vi.fn();
+    const service = createService({
+      storage: createStorageMock(),
+      logger: {
+        ...createLoggerMock(),
+        error: errorLogger,
+      },
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'https://issuer.example/openid-configuration' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          createOpenIdConfiguration({
+            productFamilyCode: 'canvas',
+            baseUrl: 'https://platform.example',
+          }),
+        ),
+      );
+
+    const failure = await service
+      .fetchPlatformConfiguration({
+        openid_configuration: 'https://issuer.example/openid-configuration/start',
+        registration_token: 'registration-token',
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+    expect(failure).toMatchObject({
+      code: 'platform_response_invalid',
+      operation: 'fetchPlatformConfiguration',
+      message: expect.stringContaining(
+        'OpenID configuration issuer does not match the discovery endpoint',
+      ),
+    });
+    expect(failure).toBeInstanceOf(Error);
+    if (failure instanceof Error) {
+      expect(failure.message).not.toContain('registration-token');
+    }
+    expect(errorLogger).toHaveBeenCalledWith(
+      {
+        endpointHostname: 'issuer.example',
+        issuerHostname: 'platform.example',
+      },
+      'OpenID configuration issuer does not match the discovery endpoint',
+    );
+    expect(JSON.stringify(errorLogger.mock.calls)).not.toContain('registration-token');
+  });
+
+  it('reports a non-JSON OpenID configuration response without parsing its HTML', async () => {
+    const service = createService({ storage: createStorageMock() });
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response('<!DOCTYPE html><title>Sign in</title>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      ),
+    ) as typeof fetch;
+
+    await expect(
+      service.fetchPlatformConfiguration({
+        openid_configuration: 'https://platform.example/openid-configuration',
+      }),
+    ).rejects.toMatchObject({
+      code: 'platform_response_invalid',
+      operation: 'fetchPlatformConfiguration',
+      message: 'Dynamic registration OpenID configuration response must be JSON',
+      responseBodySummary: 'content-type: text/html; charset=utf-8',
+    });
   });
 
   it('stores app state during registration initiation', async () => {
