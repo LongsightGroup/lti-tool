@@ -1,5 +1,15 @@
 # @longsightgroup/lti-tool
 
+## 0.1.6
+
+### Patch Changes
+
+- Harden dynamic registration OpenID configuration discovery for platforms such as Canvas that redirect the well-known endpoint.
+- Follow OpenID configuration redirects manually so registration tokens stay on the `Authorization` header and are re-applied to redirect target URLs when needed.
+- Enforce HTTPS-only discovery URLs, same-origin redirect targets, and issuer hostname validation against the final discovery URL.
+- Return structured `LtiServiceError` failures for all `fetchPlatformConfiguration` errors, including schema validation and non-JSON discovery responses.
+- Avoid reading platform error response bodies during OpenID discovery so HTML login pages and sensitive JSON are not logged or surfaced in error details.
+
 ## 0.1.5
 
 ### Patch Changes

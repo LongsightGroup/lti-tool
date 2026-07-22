@@ -392,6 +392,12 @@ Define your own Zod schema in application code when you need typed customization
 can render the generated form or complete a programmatic registration without scraping
 the hidden session token out of the HTML.
 
+OpenID configuration discovery follows redirects manually so registration tokens are
+preserved for platforms that redirect the well-known endpoint (for example, Canvas).
+Discovery requests require HTTPS, reject cross-origin redirects, and validate the
+issuer hostname against the final discovery URL. Failures are returned as structured
+`LtiServiceError` results through `LtiDynamicRegistration.fetchPlatformConfiguration`.
+
 `platforms` is keyed by built-in profile key (`canvas`, `brightspace`, `moodle`,
 or `sakai`). Add the key to the public config type and built-in profile table when
 you need first-class support for a new LMS.
