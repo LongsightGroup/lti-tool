@@ -171,19 +171,14 @@ export interface LTIStorage {
   ): Promise<void>;
 
   /**
-   * Retrieves a registration session by its ID for validation during completion.
+   * Atomically removes and returns a registration session for one-time completion.
+   *
+   * Concurrent calls for the same session ID must return the session to at most one caller.
    *
    * @param sessionId - Unique session identifier
    * @returns Registration session if found and not expired, undefined otherwise
    */
-  getRegistrationSession(
+  consumeRegistrationSession(
     sessionId: string,
   ): Promise<LTIDynamicRegistrationSession | undefined>;
-
-  /**
-   * Removes a registration session from storage (cleanup after completion or expiration).
-   *
-   * @param sessionId - Unique session identifier to delete
-   */
-  deleteRegistrationSession(sessionId: string): Promise<void>;
 }

@@ -227,8 +227,8 @@ export class DynamicRegistrationService {
   async completeDynamicRegistration(
     dynamicRegistrationForm: DynamicRegistrationForm,
   ): Promise<LtiDynamicRegistrationCompletionResult> {
-    // 1. Verify session token
-    const session = await this.verifyRegistrationSession(
+    // 1. Consume one-time registration session
+    const session = await this.storage.consumeRegistrationSession(
       dynamicRegistrationForm.sessionToken,
     );
     if (!session) {
@@ -270,23 +270,6 @@ export class DynamicRegistrationService {
       ...storedRegistration,
       ...(session.appState === undefined ? {} : { appState: session.appState }),
     };
-  }
-
-  /**
-   * Verifies and consumes a registration session token for security validation.
-   * Retrieves the session data and immediately deletes it to prevent replay attacks.
-   *
-   * @param sessionToken - UUID session token from the registration form
-   * @returns Session data if valid and not expired, undefined otherwise
-   */
-  async verifyRegistrationSession(
-    sessionToken: string,
-  ): Promise<LTIDynamicRegistrationSession | undefined> {
-    const session = await this.storage.getRegistrationSession(sessionToken);
-    if (session) {
-      await this.storage.deleteRegistrationSession(sessionToken);
-    }
-    return session;
   }
 
   private getRegistrationSuccessHtml(registrationResponse: RegistrationResponse): string {

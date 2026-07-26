@@ -63,8 +63,7 @@ const mockStorage: LTIStorage = {
   getLaunchConfig: vi.fn(),
   saveLaunchConfig: vi.fn(),
   setRegistrationSession: vi.fn(),
-  getRegistrationSession: vi.fn(),
-  deleteRegistrationSession: vi.fn(),
+  consumeRegistrationSession: vi.fn(),
 };
 
 const mockSession: LTISession = {

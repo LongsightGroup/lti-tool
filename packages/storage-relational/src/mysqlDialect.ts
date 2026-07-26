@@ -2,7 +2,7 @@ import type {
   LTIDynamicRegistrationSession,
   StorageTenantId,
 } from '@longsightgroup/lti-tool';
-import { lte } from 'drizzle-orm';
+import { and, eq, gt, lte } from 'drizzle-orm';
 import type { MySqlColumn, MySqlTable } from 'drizzle-orm/mysql-core';
 import type { MySql2Database } from 'drizzle-orm/mysql2';
 
@@ -82,6 +82,41 @@ export function createMySqlDialect<TSchema extends MySqlRelationalSchema>(option
       });
   }
 
+  function consumeRegistrationSession(
+    sessionId: string,
+    now: number,
+  ): Promise<{ readonly data: unknown } | undefined> {
+    return db.transaction(async (transaction) => {
+      const [record] = await transaction
+        .select({ data: schema.registrationSessionsTable.data })
+        .from(schema.registrationSessionsTable)
+        .where(
+          tenant.withTenant(
+            schema.registrationSessionsTable,
+            and(
+              eq(schema.registrationSessionsTable.id, sessionId),
+              gt(schema.registrationSessionsTable.expiresAt, now),
+            )!,
+          ),
+        )
+        .limit(1)
+        .for('update');
+
+      if (!record) return undefined;
+
+      await transaction
+        .delete(schema.registrationSessionsTable)
+        .where(
+          tenant.withTenant(
+            schema.registrationSessionsTable,
+            eq(schema.registrationSessionsTable.id, sessionId),
+          ),
+        );
+
+      return record;
+    });
+  }
+
   async function cleanup(now: number): Promise<RelationalCleanupResult> {
     const noncesResult = await db
       .delete(schema.noncesTable)
@@ -115,6 +150,7 @@ export function createMySqlDialect<TSchema extends MySqlRelationalSchema>(option
     nonceTtlSeconds,
     claimNonce,
     setRegistrationSession,
+    consumeRegistrationSession,
     cleanup,
   };
 }

@@ -40,8 +40,7 @@ const createMockStorage = (): LTIStorage =>
     validateNonce: vi.fn(),
     getLaunchConfig: vi.fn().mockResolvedValue(launchConfig),
     saveLaunchConfig: vi.fn(),
-    deleteRegistrationSession: vi.fn(),
-    getRegistrationSession: vi.fn(),
+    consumeRegistrationSession: vi.fn(),
     setRegistrationSession: vi.fn(),
   }) as unknown as LTIStorage;
 
@@ -115,7 +114,7 @@ describe('dynamic registration service errors', () => {
 
   it('classifies platform dynamic registration rejections', async () => {
     const storage = createMockStorage();
-    vi.mocked(storage.getRegistrationSession).mockResolvedValue(
+    vi.mocked(storage.consumeRegistrationSession).mockResolvedValue(
       testRegistrationSession(),
     );
     recordFetch([Response.json({ error: 'denied' }, { status: 400 })]);
@@ -146,7 +145,7 @@ describe('dynamic registration service errors', () => {
 
   it('classifies canonical storage conflicts during dynamic registration', async () => {
     const storage = createMockStorage();
-    vi.mocked(storage.getRegistrationSession).mockResolvedValue(
+    vi.mocked(storage.consumeRegistrationSession).mockResolvedValue(
       testRegistrationSession(),
     );
     vi.mocked(storage.listClients).mockRejectedValue(

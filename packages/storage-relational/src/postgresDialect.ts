@@ -2,7 +2,7 @@ import type {
   LTIDynamicRegistrationSession,
   StorageTenantId,
 } from '@longsightgroup/lti-tool';
-import { lte } from 'drizzle-orm';
+import { and, eq, gt, lte } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -91,6 +91,26 @@ export function createPostgresDialect<TSchema extends PostgresRelationalSchema>(
       });
   }
 
+  async function consumeRegistrationSession(
+    sessionId: string,
+    now: number,
+  ): Promise<{ readonly data: unknown } | undefined> {
+    const [record] = await db
+      .delete(schema.registrationSessionsTable)
+      .where(
+        tenant.withTenant(
+          schema.registrationSessionsTable,
+          and(
+            eq(schema.registrationSessionsTable.id, sessionId),
+            gt(schema.registrationSessionsTable.expiresAt, now),
+          )!,
+        ),
+      )
+      .returning({ data: schema.registrationSessionsTable.data });
+
+    return record;
+  }
+
   async function cleanup(now: number): Promise<RelationalCleanupResult> {
     const noncesResult = await db
       .delete(schema.noncesTable)
@@ -127,6 +147,7 @@ export function createPostgresDialect<TSchema extends PostgresRelationalSchema>(
     nonceTtlSeconds,
     claimNonce,
     setRegistrationSession,
+    consumeRegistrationSession,
     cleanup,
   };
 }

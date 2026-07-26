@@ -624,55 +624,42 @@ export class DynamoDbStorage implements LTIStorage {
     this.logDynamoDbResult(result, 'set registration session');
   }
 
-  async getRegistrationSession(
+  async consumeRegistrationSession(
     sessionId: string,
   ): Promise<LTIDynamicRegistrationSession | undefined> {
-    this.logger.debug({ sessionId }, 'getting registration session');
+    this.logger.debug({ sessionId }, 'consuming registration session');
 
-    const result = await this.ddbClient.send(
-      new GetItemCommand({
-        TableName: this.dataPlaneTable,
-        Key: marshall({
-          pk: this.tenantKey(`DYNREG#${sessionId}`),
-          sk: '#',
+    try {
+      const result = await this.ddbClient.send(
+        new DeleteItemCommand({
+          TableName: this.dataPlaneTable,
+          Key: marshall({
+            pk: this.tenantKey(`DYNREG#${sessionId}`),
+            sk: '#',
+          }),
+          ConditionExpression: 'expiresAt > :now',
+          ExpressionAttributeValues: marshall({
+            ':now': Date.now(),
+          }),
+          ReturnValues: 'ALL_OLD',
+          ReturnConsumedCapacity: 'TOTAL',
         }),
-        ReturnConsumedCapacity: 'TOTAL',
-      }),
-    );
-    this.logDynamoDbResult(result, 'get registration session');
+      );
+      this.logDynamoDbResult(result, 'consume registration session');
 
-    if (!result.Item) {
-      this.logger.warn({ sessionId }, 'registration session not found');
-      return undefined;
+      if (!result.Attributes) {
+        this.logger.warn({ sessionId }, 'registration session not found or expired');
+        return undefined;
+      }
+
+      return this.cleanRegistrationSessionRecord(unmarshall(result.Attributes));
+    } catch (error) {
+      if (error instanceof ConditionalCheckFailedException) {
+        this.logger.warn({ sessionId }, 'registration session not found or expired');
+        return undefined;
+      }
+      throw error;
     }
-
-    const session = this.cleanRegistrationSessionRecord(unmarshall(result.Item));
-    if (!session) return undefined;
-
-    // Check if expired (additional safety check beyond DynamoDB TTL)
-    if (session.expiresAt < Date.now()) {
-      this.logger.warn({ sessionId }, 'registration session expired');
-      await this.deleteRegistrationSession(sessionId);
-      return undefined;
-    }
-
-    return session;
-  }
-
-  async deleteRegistrationSession(sessionId: string): Promise<void> {
-    this.logger.debug({ sessionId }, 'deleting registration session');
-
-    const result = await this.ddbClient.send(
-      new DeleteItemCommand({
-        TableName: this.dataPlaneTable,
-        Key: marshall({
-          pk: this.tenantKey(`DYNREG#${sessionId}`),
-          sk: '#',
-        }),
-        ReturnConsumedCapacity: 'TOTAL',
-      }),
-    );
-    this.logDynamoDbResult(result, 'delete registration session');
   }
 
   private async deleteLaunchConfig(

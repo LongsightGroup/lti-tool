@@ -318,7 +318,7 @@ export class MemoryStorage implements LTIStorage {
   }
 
   // oxlint-disable-next-line require-await
-  async getRegistrationSession(
+  async consumeRegistrationSession(
     sessionId: string,
   ): Promise<LTIDynamicRegistrationSession | undefined> {
     const session = this.registrationSessions.get(sessionId);
@@ -335,11 +335,7 @@ export class MemoryStorage implements LTIStorage {
       return undefined;
     }
 
-    return session;
-  }
-
-  // oxlint-disable-next-line require-await
-  async deleteRegistrationSession(sessionId: string): Promise<void> {
     this.registrationSessions.delete(sessionId);
+    return session;
   }
 }

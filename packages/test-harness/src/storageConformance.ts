@@ -109,7 +109,7 @@ function defineLaunchConfigConformance(factory: StorageFactory): void {
 }
 
 function defineRegistrationSessionConformance(factory: StorageFactory): void {
-  it('round-trips and deletes registration sessions', () =>
+  it('atomically consumes registration sessions once', () =>
     withStorage(factory, ({ storage }) => assertRegistrationSessionContract(storage)));
 
   it('upserts registration sessions on retry', () =>
@@ -119,7 +119,7 @@ function defineRegistrationSessionConformance(factory: StorageFactory): void {
 
   if (factory.capabilities?.expiredRegistrationSessions !== true) return;
 
-  it('does not retrieve expired registration sessions', () =>
+  it('does not consume expired registration sessions', () =>
     withStorage(factory, assertExpiredRegistrationSessionContract));
 }
 
@@ -208,10 +208,14 @@ async function assertTenantRegistrationSessionIsolation(
     testRegistrationSession({ registrationToken: 'tenant-b-token' }),
   );
 
-  await expect(tenantA.storage.getRegistrationSession(sessionId)).resolves.toMatchObject({
+  await expect(
+    tenantA.storage.consumeRegistrationSession(sessionId),
+  ).resolves.toMatchObject({
     registrationToken: 'tenant-a-token',
   });
-  await expect(tenantB.storage.getRegistrationSession(sessionId)).resolves.toMatchObject({
+  await expect(
+    tenantB.storage.consumeRegistrationSession(sessionId),
+  ).resolves.toMatchObject({
     registrationToken: 'tenant-b-token',
   });
 }
@@ -454,13 +458,14 @@ async function assertRegistrationSessionContract(storage: LTIStorage): Promise<v
   const session = testRegistrationSession();
 
   await storage.setRegistrationSession('registration-session-id', session);
-  await expect(
-    storage.getRegistrationSession('registration-session-id'),
-  ).resolves.toEqual(session);
+  const results = await Promise.all([
+    storage.consumeRegistrationSession('registration-session-id'),
+    storage.consumeRegistrationSession('registration-session-id'),
+  ]);
 
-  await storage.deleteRegistrationSession('registration-session-id');
+  expect(results).toEqual(expect.arrayContaining([session, undefined]));
   await expect(
-    storage.getRegistrationSession('registration-session-id'),
+    storage.consumeRegistrationSession('registration-session-id'),
   ).resolves.toBeUndefined();
 }
 
@@ -476,7 +481,7 @@ async function assertRegistrationSessionUpsertContract(
   });
 
   await expect(
-    storage.getRegistrationSession('registration-session-id'),
+    storage.consumeRegistrationSession('registration-session-id'),
   ).resolves.toMatchObject({
     registrationToken: 'updated-token',
     expiresAt: session.expiresAt,
@@ -493,7 +498,7 @@ async function assertExpiredRegistrationSessionContract(
   );
 
   await expect(
-    harness.storage.getRegistrationSession('expired-registration-session'),
+    harness.storage.consumeRegistrationSession('expired-registration-session'),
   ).resolves.toBeUndefined();
 }
 

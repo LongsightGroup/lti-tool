@@ -1,5 +1,15 @@
 # @longsightgroup/lti-tool
 
+## 0.1.7
+
+### Breaking Changes
+
+- Replace the split `getRegistrationSession` and `deleteRegistrationSession` `LTIStorage` methods with a single atomic `consumeRegistrationSession`. Storage adapters and any direct callers must switch to the new method.
+
+### Patch Changes
+
+- Atomically consume dynamic registration sessions during completion so concurrent requests cannot replay the same one-time session.
+
 ## 0.1.6
 
 ### Patch Changes

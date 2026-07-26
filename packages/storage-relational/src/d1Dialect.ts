@@ -2,7 +2,7 @@ import type {
   LTIDynamicRegistrationSession,
   StorageTenantId,
 } from '@longsightgroup/lti-tool';
-import { lte } from 'drizzle-orm';
+import { and, eq, gt, lte } from 'drizzle-orm';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 
@@ -92,6 +92,25 @@ export function createD1Dialect<TSchema extends D1RelationalSchema>(options: {
       .run();
   }
 
+  function consumeRegistrationSession(
+    sessionId: string,
+    now: number,
+  ): Promise<{ readonly data: unknown } | undefined> {
+    return db
+      .delete(schema.registrationSessionsTable)
+      .where(
+        tenant.withTenant(
+          schema.registrationSessionsTable,
+          and(
+            eq(schema.registrationSessionsTable.id, sessionId),
+            gt(schema.registrationSessionsTable.expiresAt, now),
+          )!,
+        ),
+      )
+      .returning({ data: schema.registrationSessionsTable.data })
+      .get();
+  }
+
   async function cleanup(now: number): Promise<RelationalCleanupResult> {
     const expiredAt = (table: {
       readonly expiresAt: SQLiteColumn;
@@ -129,6 +148,7 @@ export function createD1Dialect<TSchema extends D1RelationalSchema>(options: {
     executeMutation: executeD1Mutation,
     claimNonce,
     setRegistrationSession,
+    consumeRegistrationSession,
     cleanup,
     orderClients: () => [schema.clientsTable.name, schema.clientsTable.id],
   };

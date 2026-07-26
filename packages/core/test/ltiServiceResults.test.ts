@@ -40,8 +40,7 @@ const createMockStorage = (): LTIStorage =>
     validateNonce: vi.fn(),
     getLaunchConfig: vi.fn().mockResolvedValue(launchConfig),
     saveLaunchConfig: vi.fn(),
-    deleteRegistrationSession: vi.fn(),
-    getRegistrationSession: vi.fn(),
+    consumeRegistrationSession: vi.fn(),
     setRegistrationSession: vi.fn(),
   }) as unknown as LTIStorage;
 

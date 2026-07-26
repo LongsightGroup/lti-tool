@@ -16,7 +16,7 @@ export type SessionDataRow = {
 };
 
 export type RegistrationSessionDataRow = {
-  readonly data: LTIDynamicRegistrationSession;
+  readonly data: unknown;
 };
 
 export type LaunchConfigRow = LTILaunchConfig;

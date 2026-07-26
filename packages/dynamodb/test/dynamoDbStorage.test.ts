@@ -1,5 +1,8 @@
 // oxlint-disable max-lines-per-function
-import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import {
+  type AttributeValue,
+  ConditionalCheckFailedException,
+} from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   createNoopLogger,
@@ -8,7 +11,7 @@ import {
 } from '@longsightgroup/lti-tool';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { testSession } from '#test-harness/fixtures';
+import { testRegistrationSession, testSession } from '#test-harness/fixtures';
 
 import { LAUNCH_CONFIG_CACHE } from '../src/cacheConfig.js';
 import { DynamoDbStorage } from '../src/index.js';
@@ -253,6 +256,64 @@ describe('DynamoDbStorage', () => {
     });
   });
 
+  describe('consumeRegistrationSession', () => {
+    it('atomically deletes and returns the registration session', async () => {
+      const session = testRegistrationSession();
+      mockSend.mockResolvedValue({
+        $metadata: { httpStatusCode: 200 },
+        Attributes: marshall({
+          pk: 'T#test-tenant#DYNREG#registration-session',
+          sk: '#',
+          ttl: Math.floor(session.expiresAt / 1000),
+          ...session,
+        }),
+      });
+
+      await expect(
+        storage.consumeRegistrationSession('registration-session'),
+      ).resolves.toEqual(session);
+
+      const input = commandInput(mockSend.mock.calls[0]?.[0]);
+      expect(input.ReturnValues).toBe('ALL_OLD');
+      expect(input.ConditionExpression).toBe('expiresAt > :now');
+      expect(unmarshall(input.Key ?? {}).pk).toBe(
+        'T#test-tenant#DYNREG#registration-session',
+      );
+    });
+
+    it('returns undefined when the registration session was already consumed', async () => {
+      mockSend.mockRejectedValue(
+        new ConditionalCheckFailedException({
+          message: 'The conditional request failed',
+          $metadata: {},
+        }),
+      );
+
+      await expect(
+        storage.consumeRegistrationSession('registration-session'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('returns undefined when the registration session is expired', async () => {
+      mockSend.mockRejectedValue(
+        new ConditionalCheckFailedException({
+          message: 'The conditional request failed',
+          $metadata: {},
+        }),
+      );
+
+      await expect(
+        storage.consumeRegistrationSession('expired-registration-session'),
+      ).resolves.toBeUndefined();
+
+      const input = commandInput(mockSend.mock.calls[0]?.[0]);
+      expect(input.ConditionExpression).toBe('expiresAt > :now');
+      expect(unmarshall(input.ExpressionAttributeValues ?? {})).toEqual({
+        ':now': expect.any(Number),
+      });
+    });
+  });
+
   describe('getLaunchConfig', () => {
     it('returns cached launch config', async () => {
       // Pre-populate cache
@@ -295,8 +356,23 @@ describe('DynamoDbStorage', () => {
 
 function commandInput(command: unknown): {
   readonly IndexName?: string;
+  readonly Key?: Record<string, AttributeValue>;
+  readonly ReturnValues?: string;
+  readonly ConditionExpression?: string;
+  readonly ExpressionAttributeValues?: Record<string, AttributeValue>;
 } {
-  return (command as { readonly input: { readonly IndexName?: string } }).input;
+  // SAFETY: AWS SDK command instances expose their constructor input on `input`.
+  return (
+    command as {
+      readonly input: {
+        readonly IndexName?: string;
+        readonly Key?: Record<string, AttributeValue>;
+        readonly ReturnValues?: string;
+        readonly ConditionExpression?: string;
+        readonly ExpressionAttributeValues?: Record<string, AttributeValue>;
+      };
+    }
+  ).input;
 }
 
 function dynamoOk(): { readonly $metadata: { readonly httpStatusCode: number } } {

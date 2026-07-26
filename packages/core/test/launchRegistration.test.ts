@@ -143,14 +143,10 @@ class RecordingStorage implements LTIStorage {
     return Promise.resolve();
   }
 
-  getRegistrationSession(
+  consumeRegistrationSession(
     _sessionId: string,
   ): Promise<LTIDynamicRegistrationSession | undefined> {
     return Promise.resolve(undefined);
-  }
-
-  deleteRegistrationSession(_sessionId: string): Promise<void> {
-    return Promise.resolve();
   }
 }
 

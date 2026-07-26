@@ -28,8 +28,7 @@ function createTestStorage(): LTIStorage {
     validateNonce: vi.fn(),
     getLaunchConfig: vi.fn(),
     saveLaunchConfig: vi.fn(),
-    deleteRegistrationSession: vi.fn(),
-    getRegistrationSession: vi.fn(),
+    consumeRegistrationSession: vi.fn(),
     setRegistrationSession: vi.fn(),
   };
 }

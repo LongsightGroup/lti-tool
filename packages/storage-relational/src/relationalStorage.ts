@@ -126,6 +126,10 @@ export type RelationalStorageDialect = {
     sessionId: string,
     session: LTIDynamicRegistrationSession,
   ) => Promise<void>;
+  readonly consumeRegistrationSession: (
+    sessionId: string,
+    now: number,
+  ) => Promise<RegistrationSessionDataRow | undefined>;
   readonly cleanup: (now: number) => Promise<RelationalCleanupResult>;
   readonly orderClients?: (schema: RelationalSchema) => readonly AnyColumn[];
 };
@@ -472,24 +476,12 @@ export class RelationalStorage implements LTIStorage {
     return this.dialect.setRegistrationSession(sessionId, session);
   }
 
-  async getRegistrationSession(
+  async consumeRegistrationSession(
     sessionId: string,
   ): Promise<LTIDynamicRegistrationSession | undefined> {
-    this.logger.debug({ sessionId }, 'getting registration session');
+    this.logger.debug({ sessionId }, 'consuming registration session');
 
-    const [record] = await this.db
-      .select<RegistrationSessionDataRow>()
-      .from(this.schema.registrationSessionsTable)
-      .where(
-        this.scoped(
-          this.schema.registrationSessionsTable,
-          and(
-            eq(this.schema.registrationSessionsTable.id, sessionId),
-            gt(this.schema.registrationSessionsTable.expiresAt, Date.now()),
-          )!,
-        ),
-      )
-      .limit(1);
+    const record = await this.dialect.consumeRegistrationSession(sessionId, Date.now());
 
     if (!record) {
       this.logger.warn({ sessionId }, 'registration session not found or expired');
@@ -497,23 +489,6 @@ export class RelationalStorage implements LTIStorage {
     }
 
     return parseRegistrationSessionDataRow(record, this.logger);
-  }
-
-  async deleteRegistrationSession(sessionId: string): Promise<void> {
-    this.logger.debug({ sessionId }, 'deleting registration session');
-
-    await this.executeMutation(
-      this.db
-        .delete(this.schema.registrationSessionsTable)
-        .where(
-          this.scoped(
-            this.schema.registrationSessionsTable,
-            eq(this.schema.registrationSessionsTable.id, sessionId),
-          ),
-        ),
-    );
-
-    this.logger.debug({ sessionId }, 'registration session deleted');
   }
 
   async cleanup(): Promise<RelationalCleanupResult> {

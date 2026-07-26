@@ -67,8 +67,7 @@ const createStorageMock = () =>
     getLaunchConfig: vi.fn(),
     saveLaunchConfig: vi.fn(),
     setRegistrationSession: vi.fn(),
-    getRegistrationSession: vi.fn(),
-    deleteRegistrationSession: vi.fn(),
+    consumeRegistrationSession: vi.fn(),
   }) as unknown as LTIStorage;
 
 const createRegistrationResponse = (clientId: string) => ({
@@ -183,7 +182,7 @@ async function completeRegistrationAndCapturePayload(
     baseUrl,
   });
 
-  vi.mocked(storage.getRegistrationSession).mockResolvedValue({
+  vi.mocked(storage.consumeRegistrationSession).mockResolvedValue({
     openIdConfiguration,
     registrationToken: 'reg-token-123',
     expiresAt: Date.now() + 10_000,
@@ -608,7 +607,7 @@ describe('DynamicRegistrationService', () => {
       session: { appState: { tenantId: 'tenant-1' } },
     });
 
-    expect(storage.deleteRegistrationSession).toHaveBeenCalledWith(SESSION_TOKEN);
+    expect(storage.consumeRegistrationSession).toHaveBeenCalledWith(SESSION_TOKEN);
     expect(storage.addClient).toHaveBeenCalledWith(
       expect.objectContaining({
         clientId: 'sakai-client-id',
@@ -841,7 +840,7 @@ describe('DynamicRegistrationService', () => {
       }),
     });
 
-    vi.mocked(storage.getRegistrationSession).mockResolvedValue({
+    vi.mocked(storage.consumeRegistrationSession).mockResolvedValue({
       openIdConfiguration: createOpenIdConfiguration({
         productFamilyCode: 'blackboard',
         baseUrl: 'https://blackboard.example',
