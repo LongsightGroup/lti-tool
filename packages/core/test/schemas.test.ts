@@ -472,6 +472,81 @@ describe('Schema Validation Tests', () => {
       expect(() => LTI13JwtPayloadSchema.parse(validPayload)).not.toThrow();
     });
 
+    it('preserves Sakai HTTPS URI extensions in Deep Linking settings', () => {
+      const sakaiPlacementKey = 'https://www.sakailms.org/spec/lti-dl/placement';
+      const sakaiAcceptLineItemKey =
+        'https://www.sakailms.org/spec/lti-dl/accept_lineitem';
+      const sakaiAcceptAvailableKey =
+        'https://www.sakailms.org/spec/lti-dl/accept_available';
+      const sakaiAcceptSubmissionKey =
+        'https://www.sakailms.org/spec/lti-dl/accept_submission';
+      const parsed = LTI13JwtPayloadSchema.parse({
+        iss: 'https://platform.example.com',
+        aud: 'client123',
+        exp: Math.floor(Date.now() / 1000) + 300,
+        iat: Math.floor(Date.now() / 1000),
+        nonce: 'test-nonce',
+        [LTI_CLAIM_MESSAGE_TYPE]: LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
+        [LTI_CLAIM_VERSION]: LTI_VERSION_1P3P0,
+        [LTI_CLAIM_DEPLOYMENT_ID]: 'deployment1',
+        [LTI_CLAIM_TARGET_LINK_URI]: 'https://tool.example.com/content',
+        [LTI_CLAIM_DEEP_LINKING_SETTINGS]: {
+          deep_link_return_url: 'https://platform.example.com/deep_links',
+          accept_types: ['ltiResourceLink'],
+          accept_presentation_document_targets: ['iframe'],
+          [sakaiPlacementKey]: 'lessons',
+          [sakaiAcceptLineItemKey]: true,
+          [sakaiAcceptAvailableKey]: false,
+          [sakaiAcceptSubmissionKey]: false,
+        },
+      });
+
+      const settings = parsed[LTI_CLAIM_DEEP_LINKING_SETTINGS];
+      expect(settings).toMatchObject({
+        [sakaiPlacementKey]: 'lessons',
+        [sakaiAcceptLineItemKey]: true,
+        [sakaiAcceptAvailableKey]: false,
+        [sakaiAcceptSubmissionKey]: false,
+      });
+    });
+
+    it.each([
+      ['ordinary unknown key', 'accept_mulitple'],
+      ['HTTP URL key', 'http://www.sakailms.org/spec/lti-dl/placement'],
+      ['malformed URL-like key', 'https//www.sakailms.org/spec/lti-dl/placement'],
+    ])('rejects a Deep Linking settings %s', (_description, unknownKey) => {
+      const invalidPayload = {
+        iss: 'https://platform.example.com',
+        aud: 'client123',
+        exp: Math.floor(Date.now() / 1000) + 300,
+        iat: Math.floor(Date.now() / 1000),
+        nonce: 'test-nonce',
+        [LTI_CLAIM_MESSAGE_TYPE]: LTI_MESSAGE_TYPE_DEEP_LINKING_REQUEST,
+        [LTI_CLAIM_VERSION]: LTI_VERSION_1P3P0,
+        [LTI_CLAIM_DEPLOYMENT_ID]: 'deployment1',
+        [LTI_CLAIM_TARGET_LINK_URI]: 'https://tool.example.com/content',
+        [LTI_CLAIM_DEEP_LINKING_SETTINGS]: {
+          deep_link_return_url: 'https://platform.example.com/deep_links',
+          accept_types: ['ltiResourceLink'],
+          accept_presentation_document_targets: ['iframe'],
+          [unknownKey]: true,
+        },
+      };
+
+      const result = LTI13JwtPayloadSchema.safeParse(invalidPayload);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'unrecognized_keys',
+            keys: [unknownKey],
+            path: [LTI_CLAIM_DEEP_LINKING_SETTINGS],
+          }),
+        );
+      }
+    });
+
     it('rejects payload with invalid message type', () => {
       const invalidPayload = {
         iss: 'https://platform.example.com',
