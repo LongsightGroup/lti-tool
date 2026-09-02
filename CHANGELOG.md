@@ -1,5 +1,13 @@
 # @longsightgroup/lti-tool
 
+## 0.1.8
+
+### Patch Changes
+
+- Accept absolute HTTPS URI-named extension properties in LTI Deep Linking
+  settings while continuing to reject ordinary unknown, insecure, and
+  malformed property names.
+
 ## 0.1.7
 
 ### Breaking Changes
