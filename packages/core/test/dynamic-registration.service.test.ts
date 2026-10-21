@@ -654,6 +654,36 @@ describe('DynamicRegistrationService', () => {
     expect(headers.get('Authorization')).toBe('Bearer reg-token-123');
   });
 
+  it('accepts a registration response that omits messages', async () => {
+    const response = createRegistrationResponseWithDeployment('moodle-client-id', '2');
+    const { messages: _messages, ...toolConfiguration } =
+      response[LTI_CLAIM_TOOL_CONFIGURATION];
+
+    const { result, storage } = await completeRegistrationAndCapturePayload({
+      productFamilyCode: 'moodle',
+      baseUrl: 'https://moodle.example',
+      registrationResponse: {
+        ...response,
+        [LTI_CLAIM_TOOL_CONFIGURATION]: toolConfiguration,
+      },
+    });
+
+    expect(storage.addClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: 'moodle-client-id',
+        iss: 'https://moodle.example',
+      }),
+    );
+    expect(storage.addDeployment).toHaveBeenCalledWith('client-record-id', {
+      deploymentId: '2',
+      name: 'Default Deployment via dynamic registration provided deployment id',
+    });
+    expect(result.launchConfig).toMatchObject({
+      clientId: 'moodle-client-id',
+      deploymentId: '2',
+    });
+  });
+
   it('keeps unsupported platforms on the generic message path', async () => {
     const { requestBody } = await completeRegistrationAndCapturePayload({
       productFamilyCode: 'blackboard',

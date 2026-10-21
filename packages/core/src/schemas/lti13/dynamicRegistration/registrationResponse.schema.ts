@@ -8,11 +8,16 @@ import { LTIMessagesArraySchema } from './ltiMessages.schema.js';
  * Zod schema for LTI tool configuration within dynamic registration response.
  * Contains tool-specific metadata returned by the platform after successful registration.
  *
+ * LTI Dynamic Registration 1.0 requires `messages` on this object (§2.2.2).
+ * Moodle 5.3 omits it. Completion does not read the echoed array, so a missing
+ * value stays unset. Rejecting the response would leave the tool registered on
+ * the platform and missing from storage.
+ *
  * @property domain - Tool's domain name for security validation
  * @property target_link_uri - Optional default launch URL for the tool
  * @property custom_parameters - Optional custom parameters passed to the tool
  * @property claims - Array of JWT claims the tool requires (e.g., 'iss', 'sub', 'name', 'email')
- * @property messages - Array of LTI message types the tool supports
+ * @property messages - Message types echoed by the platform. Required by the spec; accepted when absent.
  * @property version - Optional tool version string
  * @property deployment_id - Optional deployment identifier assigned by the platform
  */
@@ -21,7 +26,7 @@ const LTIToolConfigurationResponseSchema = z.object({
   target_link_uri: z.url().optional(),
   custom_parameters: z.record(z.string(), z.string()).optional(),
   claims: z.array(z.string()),
-  messages: LTIMessagesArraySchema,
+  messages: LTIMessagesArraySchema.optional(),
   version: z.string().optional(),
   deployment_id: z.string().optional(),
 });
