@@ -21,6 +21,8 @@ LTI Tool handles that protocol work so you can focus on your application:
 
 The package ships as a single npm module with subpath exports. Install once, import only what you need.
 
+NRPS profile names may be omitted for privacy. AGS line-item write permission also permits reads; the SDK requests an actually granted scope. See [Advantage privacy and scopes](ADVANTAGE.md).
+
 ## Install
 
 ```bash

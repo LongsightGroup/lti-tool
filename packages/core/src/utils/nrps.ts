@@ -45,7 +45,7 @@ export function normalizeLtiNrpsMembersResponse(input: unknown): Member[] {
   const response = NRPSContextMembershipResponseSchema.parse(input);
   return response.members.map((member) => ({
     status: member.status,
-    name: member.name,
+    ...(member.name === undefined ? {} : { name: member.name }),
     ...(member.picture === undefined ? {} : { picture: member.picture }),
     ...(member.given_name === undefined ? {} : { givenName: member.given_name }),
     ...(member.family_name === undefined ? {} : { familyName: member.family_name }),
@@ -60,7 +60,7 @@ export function normalizeLtiNrpsMembersResponse(input: unknown): Member[] {
 }
 
 export function getLtiMemberDisplayName(member: Member): string {
-  if (member.name.trim().length > 0) return member.name;
+  if (member.name !== undefined && member.name.trim().length > 0) return member.name;
 
   const nameParts = [member.givenName, member.middleName, member.familyName].filter(
     (part): part is string => part !== undefined && part.trim().length > 0,

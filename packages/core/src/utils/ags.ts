@@ -1,3 +1,4 @@
+import { LTI_AGS_SCOPE_LINEITEM, LTI_AGS_SCOPE_LINEITEM_READONLY } from '../constants.js';
 import type { LTISession } from '../interfaces/ltiSession.js';
 
 export type LtiAgsService = NonNullable<NonNullable<LTISession['services']>['ags']>;
@@ -18,8 +19,22 @@ export function isLtiAgsLineItemsAvailable(session: LTISession): boolean {
   return getLtiAgsService(session)?.lineitems !== undefined;
 }
 
+/** Resolve a declared scope for an operation; full line-item permission also allows reads. */
+export function resolveLtiAgsScope(
+  scopes: readonly string[],
+  required: string,
+): string | undefined {
+  if (scopes.includes(required)) return required;
+  if (
+    required === LTI_AGS_SCOPE_LINEITEM_READONLY &&
+    scopes.includes(LTI_AGS_SCOPE_LINEITEM)
+  )
+    return LTI_AGS_SCOPE_LINEITEM;
+  return undefined;
+}
+
 export function hasLtiAgsScope(session: LTISession, scope: string): boolean {
-  return getLtiAgsService(session)?.scopes.includes(scope) ?? false;
+  return resolveLtiAgsScope(getLtiAgsService(session)?.scopes ?? [], scope) !== undefined;
 }
 
 export type LtiAgsLineItemFilters = {

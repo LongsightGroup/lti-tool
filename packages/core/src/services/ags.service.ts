@@ -16,6 +16,7 @@ import type {
   UpdateLineItem,
 } from '../schemas/lti13/ags/lineItem.schema.js';
 import type { ScoreSubmission } from '../schemas/lti13/ags/scoreSubmission.schema.js';
+import { resolveLtiAgsScope } from '../utils/ags.js';
 import { getValidLaunchConfig } from '../utils/launchConfigValidation.js';
 import { ltiServiceFetch } from '../utils/ltiServiceFetch.js';
 
@@ -359,7 +360,8 @@ export class AGSService {
     return this.tokenService.getBearerToken(
       session.platform.clientId,
       launchConfig.tokenUrl,
-      scope,
+      // Raw transports may be called with an explicit URL and no launch service declaration.
+      resolveLtiAgsScope(session.services?.ags?.scopes ?? [], scope) ?? scope,
     );
   }
 

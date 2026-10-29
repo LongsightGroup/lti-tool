@@ -5,7 +5,7 @@ import * as z from 'zod';
  */
 export const NRPSMemberResponseSchema = z.object({
   status: z.string(),
-  name: z.string(),
+  name: z.string().optional(),
   picture: z.url().optional(),
   given_name: z.string().optional(),
   family_name: z.string().optional(),
@@ -39,7 +39,7 @@ export const NRPSContextMembershipResponseSchema = z.object({
  */
 export const MemberSchema = z.object({
   status: z.string(),
-  name: z.string(),
+  name: z.string().optional(),
   picture: z.url().optional(),
   givenName: z.string().optional(),
   familyName: z.string().optional(),
