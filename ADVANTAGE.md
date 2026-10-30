@@ -13,3 +13,8 @@ write, score publication or result access. See [AGS 2.0, scopes and HTTP methods
 The raw AGS transport retains explicitly requested scopes when there is no
 matching launch declaration; the platform token endpoint remains authoritative.
 The high-level Advantage API checks the declared capabilities before calling it.
+
+The Blocks score-submission screen uses `hasLtiAgsScope` for its linked-column
+read check as well as the score permission. A launch granting full `lineitem`
+permission can read the maximum and submit scores without also declaring
+`lineitem.readonly`; full line-item permission alone never grants score writes.
